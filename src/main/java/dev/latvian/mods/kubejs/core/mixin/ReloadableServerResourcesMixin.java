@@ -49,9 +49,9 @@ public abstract class ReloadableServerResourcesMixin implements ReloadableServer
 	private static void injectKubeJSPacks(ResourceManager resourceManager, LayeredRegistryAccess<RegistryLayer> registries, FeatureFlagSet enabledFeatures, Commands.CommandSelection commandSelection, int functionCompilationLevel, Executor backgroundExecutor, Executor gameExecutor, CallbackInfoReturnable<CompletableFuture<ReloadableServerResources>> cir) {
 		RegistryAccessContainer.current = new RegistryAccessContainer(registries.compositeAccess());
 
-		if (gameExecutor instanceof MinecraftServer s && s.getServerResources() != null && s.getServerResources().managers().kjs$getServerScriptManager() != null) {
-			s.getServerResources().managers().kjs$getServerScriptManager().reloadAndCapture();
-		}
+//		if (gameExecutor instanceof MinecraftServer s && s.getServerResources() != null && s.getServerResources().managers().kjs$getServerScriptManager() != null) {
+//			s.getServerResources().managers().kjs$getServerScriptManager().reloadAndCapture();
+//		}
 	}
 
 	@Override

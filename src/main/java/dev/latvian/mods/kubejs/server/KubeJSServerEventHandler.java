@@ -108,6 +108,10 @@ public class KubeJSServerEventHandler {
 	@SubscribeEvent
 	public static void serverStopped(ServerStoppedEvent event) {
 		RegistryAccessContainer.current = RegistryAccessContainer.BUILTIN;
+		var manager = event.getServer().getServerResources().managers().kjs$getServerScriptManager();
+		if (manager != null) {
+			manager.clearContext();
+		}
 	}
 
 	@SubscribeEvent

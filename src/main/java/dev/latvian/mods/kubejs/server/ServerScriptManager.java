@@ -26,16 +26,21 @@ import dev.latvian.mods.kubejs.script.data.VirtualDataPack;
 import dev.latvian.mods.kubejs.server.tag.PreTagKubeEvent;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.RegistryAccessContainer;
+import dev.latvian.mods.rhino.Context;
+import dev.latvian.mods.rhino.ContextFactory;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackType;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.neoforge.registries.DataPackRegistriesHooks;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +51,19 @@ import java.util.stream.Collectors;
 
 public class ServerScriptManager extends ScriptManager {
 	private static ServerScriptManager staticInstance;
+	// NOT FOR PRODUCTION, THIS SHOULD BE MADE ACCESSIBLE IN RHINO
+	public static final VarHandle CURRENT_CONTEXT;
+
+	static {
+		try {
+			var lookup = MethodHandles.privateLookupIn(ContextFactory.class,  MethodHandles.lookup());
+			CURRENT_CONTEXT = lookup.findVarHandle(ContextFactory.class, "currentContext", ThreadLocal.class);
+		} catch (Throwable t) {
+			throw new RuntimeException(t);
+		}
+
+	}
+
 
 	public static List<PackResources> createPackResources(List<PackResources> original) {
 		var packs = new ArrayList<>(original);
@@ -58,6 +76,13 @@ public class ServerScriptManager extends ScriptManager {
 		int beforeModsIndex = KubeFileResourcePack.findBeforeModsIndex(packs);
 		int afterModsIndex = KubeFileResourcePack.findAfterModsIndex(packs);
 
+		var server = ServerLifecycleHooks.getCurrentServer();
+		if (server != null) {
+			var oldManager = server.getServerResources().managers().kjs$getServerScriptManager();
+			if (oldManager != null) {
+				oldManager.clearContext();
+			}
+		}
 		var manager = new ServerScriptManager();
 		packs.add(beforeModsIndex, manager.virtualPacks.get(GeneratedDataStage.BEFORE_MODS));
 		packs.add(afterModsIndex, manager.internalDataPack);
@@ -251,5 +276,28 @@ public class ServerScriptManager extends ScriptManager {
 	public void reloadAndCapture() {
 		reload();
 		staticInstance = this;
+	}
+
+	public void clearContext(){
+		// clear the first one generated on main thread
+		KubeJS.PROXY.runInMainThread(() -> {
+			try {
+				if (this.contextFactory != null){
+					ThreadLocal<Context> currentContext = (ThreadLocal<Context>) CURRENT_CONTEXT.get(this.contextFactory);
+					currentContext.remove();
+				}
+			} catch (Throwable ignored) {
+
+			}
+		});
+		// clear on server thread
+		try {
+			if (this.contextFactory != null) {
+				ThreadLocal<Context> currentContext = (ThreadLocal<Context>) CURRENT_CONTEXT.get(this.contextFactory);
+				currentContext.remove();
+			}
+		} catch (Throwable ignored) {
+
+		}
 	}
 }
