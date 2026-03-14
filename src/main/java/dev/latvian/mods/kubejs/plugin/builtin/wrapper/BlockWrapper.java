@@ -3,6 +3,7 @@ package dev.latvian.mods.kubejs.plugin.builtin.wrapper;
 import dev.latvian.mods.kubejs.block.predicate.BlockEntityPredicate;
 import dev.latvian.mods.kubejs.block.predicate.BlockIDPredicate;
 import dev.latvian.mods.kubejs.block.predicate.BlockPredicate;
+import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.registry.RegistryKubeEvent;
 import dev.latvian.mods.kubejs.typings.Info;
 import dev.latvian.mods.kubejs.util.Cast;
@@ -19,7 +20,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockSetType;
 import net.minecraft.world.level.block.state.properties.Property;
@@ -126,15 +126,12 @@ public class BlockWrapper {
 		return ALL_STATE_CACHE;
 	}
 
+	// TODO (26.1): RegistryAccessContainer => Context
 	public static BlockState parseBlockState(RegistryAccessContainer registries, String string) {
-		if (string.isEmpty()) {
-			return Blocks.AIR.defaultBlockState();
-		}
-
 		try {
 			return BlockStateParser.parseForBlock(registries.access().lookupOrThrow(Registries.BLOCK), string, false).blockState();
 		} catch (Exception ex) {
-			return Blocks.AIR.defaultBlockState();
+			throw new IllegalArgumentException("Invalid block state '%s'".formatted(string), ex);
 		}
 	}
 
@@ -160,10 +157,16 @@ public class BlockWrapper {
 	@Info("Parses a block state from the input string. May throw for invalid inputs!")
 	public static BlockState wrapBlockState(RegistryAccessContainer registries, Object o) {
 		return switch (o) {
-			case null -> Blocks.AIR.defaultBlockState();
+			case null -> throw new KubeRuntimeException("BlockState cannot be null!");
 			case BlockState bs -> bs;
 			case Block block -> block.defaultBlockState();
-			default -> parseBlockState(registries, o.toString());
+			default -> {
+				try {
+					yield parseBlockState(registries, o.toString());
+				} catch (IllegalArgumentException ex) {
+					throw new KubeRuntimeException("Failed to read block state from %s: %s".formatted(o, ex.getMessage()));
+				}
+			}
 		};
 	}
 
