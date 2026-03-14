@@ -93,14 +93,14 @@ public interface MiscWrappers {
 			case Map<?, ?> m -> {
 				Map<String, Object> map = Cast.to(m);
 
-				if (hasBounds(map)) {
-					yield parseIntBounds(map).map(v -> v);
-				} else if (map.containsKey("clamped")) {
+				if (map.containsKey("clamped")) {
 					yield tryWrapIntProvider(cx, map.get("clamped"))
 						.apply2(MiscWrappers::toClamped, parseIntBounds(map));
 				} else if (map.containsKey("clamped_normal")) {
 					yield tryParseInt(map.get("mean"))
 						.apply3(MiscWrappers::toClampedNormal, tryParseInt(map.get("deviation")), parseIntBounds(map));
+				} else if (hasBounds(map)) {
+					yield parseIntBounds(map).map(v -> v);
 				} else {
 					yield IntProvider.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, map))
 						.mapError(error -> "Failed to decode IntProvider from %s: %s".formatted(map, error));
@@ -177,16 +177,16 @@ public interface MiscWrappers {
 	}
 
 	private static DataResult<IntProvider> intProviderFromMap(Context cx, Map<String, Object> m) {
-		if (hasBounds(m)) {
-			return parseIntBounds(m).map(v -> v);
-		} else if (m.containsKey("clamped")) {
+		if (m.containsKey("clamped")) {
 			return tryWrapIntProvider(cx, m.get("clamped")).apply2(MiscWrappers::toClamped, parseIntBounds(m));
 		} else if (m.containsKey("clamped_normal")) {
 			return tryParseInt(m.get("mean"))
 				.apply3(MiscWrappers::toClampedNormal, tryParseInt(m.get("deviation")), parseIntBounds(m));
+		} else if (hasBounds(m)) {
+			return parseIntBounds(m).map(v -> v);
+		} else {
+			return IntProvider.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, m)).map(v -> v).mapError(error -> "Failed to decode IntProvider from %s: %s".formatted(m, error));
 		}
-
-		return IntProvider.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, m)).map(v -> v).mapError(error -> "Failed to decode IntProvider from %s: %s".formatted(m, error));
 	}
 
 	private static DataResult<NumberProvider> numberProviderFromMap(Context cx, Map<String, Object> m) {
@@ -202,15 +202,15 @@ public interface MiscWrappers {
 	}
 
 	private static DataResult<FloatProvider> floatProviderFromMap(Context cx, Map<String, Object> m) {
-		if (hasBounds(m)) {
-			return parseFloatBounds(m).map(v -> v);
-		} else if (m.containsKey("clamped_normal")) {
+		if (m.containsKey("clamped_normal")) {
 			return tryParseInt(m.get("mean"))
 				.apply3(MiscWrappers::toClampedNormal, tryParseFloat(m.get("deviation")), parseFloatBounds(m));
+		} else if (hasBounds(m)) {
+			return parseFloatBounds(m).map(v -> v);
+		} else {
+			return FloatProvider.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, m))
+				.mapError(error -> "Failed to decode FloatProvider from %s: %s".formatted(m, error));
 		}
-
-		return FloatProvider.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, m))
-			.mapError(error -> "Failed to decode FloatProvider from %s: %s".formatted(m, error));
 	}
 
 	private static boolean hasBounds(Map<String, Object> m) {
