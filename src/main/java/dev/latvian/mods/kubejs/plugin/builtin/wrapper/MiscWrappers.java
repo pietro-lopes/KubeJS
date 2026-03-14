@@ -242,33 +242,31 @@ public interface MiscWrappers {
 		return ClampedNormalFloat.of(mean, deviation, clampTo.getMinValue(), clampTo.getMaxValue());
 	}
 
-	@Nullable
-	static Path wrapPath(Object o) {
+	static Path wrapPath(Context cx, Object o) {
 		try {
-			if (o instanceof Path) {
-				return KubeJSPaths.verifyFilePath((Path) o);
+			if (o instanceof Path p) {
+				return KubeJSPaths.verifyFilePath(p);
 			} else if (o == null || o.toString().isEmpty()) {
 				return null;
 			}
 
 			return KubeJSPaths.verifyFilePath(KubeJSPaths.GAMEDIR.resolve(o.toString()));
 		} catch (Exception ex) {
-			return null;
+			throw new KubeRuntimeException("Invalid path '%s'".formatted(o), ex).source(SourceLine.of(cx));
 		}
 	}
 
-	@Nullable
-	static File wrapFile(Object o) {
+	static File wrapFile(Context cx, Object o) {
 		try {
-			if (o instanceof File) {
-				return KubeJSPaths.verifyFilePath(((File) o).toPath()).toFile();
+			if (o instanceof File f) {
+				return KubeJSPaths.verifyFilePath(f.toPath()).toFile();
 			} else if (o == null || o.toString().isEmpty()) {
 				return null;
 			}
 
 			return KubeJSPaths.verifyFilePath(KubeJSPaths.GAMEDIR.resolve(o.toString())).toFile();
 		} catch (Exception ex) {
-			return null;
+			throw new KubeRuntimeException("Invalid file path '%s'".formatted(o), ex).source(SourceLine.of(cx));
 		}
 	}
 }

@@ -33,7 +33,7 @@ public interface PlayerSelector {
 			throw new KubeRuntimeException("PlayerSelector cannot be blank!").source(SourceLine.of(cx));
 		}
 
-		var uuid = UUIDWrapper.fromString(name);
+		var uuid = UUIDWrapper.fromString(cx, name);
 		if (uuid != null) {
 			return uuid(uuid);
 		}

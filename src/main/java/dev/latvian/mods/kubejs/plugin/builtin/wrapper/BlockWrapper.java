@@ -5,6 +5,7 @@ import dev.latvian.mods.kubejs.block.predicate.BlockIDPredicate;
 import dev.latvian.mods.kubejs.block.predicate.BlockPredicate;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.registry.RegistryKubeEvent;
+import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.kubejs.typings.Info;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.KubeResourceLocation;
@@ -148,7 +149,7 @@ public class BlockWrapper {
 					}
 				}
 
-				yield null;
+				throw new KubeRuntimeException("Unknown BlockSetType named '%s'!".formatted(str)).source(SourceLine.of(cx));
 			}
 			default -> (BlockSetType) ((RecordTypeInfo) target).wrap(cx, from, target);
 		};

@@ -1,5 +1,11 @@
 package dev.latvian.mods.kubejs.util;
 
+import dev.latvian.mods.kubejs.error.KubeRuntimeException;
+import dev.latvian.mods.kubejs.script.SourceLine;
+import dev.latvian.mods.rhino.Context;
+import dev.latvian.mods.rhino.Scriptable;
+import dev.latvian.mods.rhino.Undefined;
+
 import java.time.Duration;
 import java.time.temporal.TemporalAmount;
 import java.util.Calendar;
@@ -8,10 +14,13 @@ import java.util.regex.Pattern;
 public interface TimeJS {
 	Pattern TEMPORAL_AMOUNT_PATTERN = Pattern.compile("(\\d+)\\s*(y|M|d|w|h|m|s|ms|ns|t)\\b");
 
-	static TemporalAmount wrapTemporalAmount(Object o) {
+	static TemporalAmount wrapTemporalAmount(Context cx, Object o) {
 		return switch (o) {
 			case TemporalAmount d -> d;
 			case Number n -> Duration.ofMillis(n.longValue());
+			case null -> throw new KubeRuntimeException("Cannot convert null to temporal amount!").source(SourceLine.of(cx));
+			case Undefined undefined -> throw new KubeRuntimeException("Cannot convert undefined to temporal amount!").source(SourceLine.of(cx));
+			case Scriptable s when Undefined.isUndefined(s) -> throw new KubeRuntimeException("Cannot convert undefined to temporal amount!").source(SourceLine.of(cx));
 			case CharSequence cs -> {
 				var matcher = TEMPORAL_AMOUNT_PATTERN.matcher(cs.toString());
 
@@ -40,7 +49,7 @@ public interface TimeJS {
 						case "w" -> millis = amount * 86400L * 7000L;
 						case "M" -> millis = amount * 31556952D / 12D * 1000L;
 						case "y" -> millis = amount * 31556952D * 1000L;
-						default -> throw new IllegalArgumentException("Invalid temporal unit: " + matcher.group(2));
+						default -> throw new KubeRuntimeException("Invalid temporal unit: " + matcher.group(2)).source(SourceLine.of(cx));
 					}
 				}
 
@@ -50,12 +59,12 @@ public interface TimeJS {
 
 				yield Duration.ofMillis((long) millis).plusNanos((long) nanos);
 			}
-			case null, default -> throw new IllegalArgumentException("Invalid temporal amount: " + o);
+			default -> throw new KubeRuntimeException("Failed to parse temporal amount: " + o).source(SourceLine.of(cx));
 		};
 	}
 
-	static Duration wrapDuration(Object o) {
-		var t = wrapTemporalAmount(o);
+	static Duration wrapDuration(Context cx, Object o) {
+		var t = wrapTemporalAmount(cx, o);
 
 		return switch (t) {
 			case Duration d -> d;
