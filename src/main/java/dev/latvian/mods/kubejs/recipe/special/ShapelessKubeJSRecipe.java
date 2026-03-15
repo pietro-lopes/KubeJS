@@ -20,13 +20,11 @@ import java.util.List;
 public class ShapelessKubeJSRecipe extends ShapelessRecipe implements KubeJSCraftingRecipe {
 	private final List<IngredientActionHolder> ingredientActions;
 	private final String modifyResult;
-	private final String stage;
 
-	public ShapelessKubeJSRecipe(ShapelessRecipe original, List<IngredientActionHolder> ingredientActions, String modifyResult, String stage) {
+	public ShapelessKubeJSRecipe(ShapelessRecipe original, List<IngredientActionHolder> ingredientActions, String modifyResult) {
 		super(original.getGroup(), original.category(), original.result, original.getIngredients());
 		this.ingredientActions = ingredientActions;
 		this.modifyResult = modifyResult;
-		this.stage = stage;
 	}
 
 	@Override
@@ -45,11 +43,6 @@ public class ShapelessKubeJSRecipe extends ShapelessRecipe implements KubeJSCraf
 	}
 
 	@Override
-	public String kjs$getStage() {
-		return stage;
-	}
-
-	@Override
 	public NonNullList<ItemStack> getRemainingItems(CraftingInput input) {
 		return kjs$getRemainingItems(input);
 	}
@@ -63,15 +56,13 @@ public class ShapelessKubeJSRecipe extends ShapelessRecipe implements KubeJSCraf
 		public static final MapCodec<ShapelessKubeJSRecipe> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
 			Serializer.CODEC.forGetter(r -> r),
 			IngredientActionHolder.LIST_CODEC.optionalFieldOf(INGREDIENT_ACTIONS_KEY, List.of()).forGetter(ShapelessKubeJSRecipe::kjs$getIngredientActions),
-			Codec.STRING.optionalFieldOf(MODIFY_RESULT_KEY, "").forGetter(ShapelessKubeJSRecipe::kjs$getModifyResult),
-			Codec.STRING.optionalFieldOf(STAGE_KEY, "").forGetter(ShapelessKubeJSRecipe::kjs$getStage)
-		).apply(instance, ShapelessKubeJSRecipe::new));
+			Codec.STRING.optionalFieldOf(MODIFY_RESULT_KEY, "").forGetter(ShapelessKubeJSRecipe::kjs$getModifyResult)
+		).apply(instance, (ShapelessRecipe original, List<IngredientActionHolder> ingredientActions1, String modifyResult1) -> new ShapelessKubeJSRecipe(original, ingredientActions1, modifyResult1)));
 
 		public static final StreamCodec<RegistryFriendlyByteBuf, ShapelessKubeJSRecipe> STREAM_CODEC = StreamCodec.composite(
 			Serializer.STREAM_CODEC, r -> r,
 			IngredientActionHolder.LIST_STREAM_CODEC, ShapelessKubeJSRecipe::kjs$getIngredientActions,
 			ByteBufCodecs.STRING_UTF8, ShapelessKubeJSRecipe::kjs$getModifyResult,
-			ByteBufCodecs.STRING_UTF8, ShapelessKubeJSRecipe::kjs$getStage,
 			ShapelessKubeJSRecipe::new
 		);
 

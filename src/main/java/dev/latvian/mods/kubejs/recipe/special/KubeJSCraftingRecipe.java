@@ -14,7 +14,6 @@ import net.minecraft.world.item.crafting.CraftingRecipe;
 import java.util.List;
 
 public interface KubeJSCraftingRecipe extends CraftingRecipe {
-	String STAGE_KEY = "kubejs:stage";
 	String MIRROR_KEY = "kubejs:mirror";
 	String INGREDIENT_ACTIONS_KEY = "kubejs:ingredient_actions";
 	String MODIFY_RESULT_KEY = "kubejs:modify_result";
@@ -22,8 +21,6 @@ public interface KubeJSCraftingRecipe extends CraftingRecipe {
 	List<IngredientActionHolder> kjs$getIngredientActions();
 
 	String kjs$getModifyResult();
-
-	String kjs$getStage();
 
 	default NonNullList<ItemStack> kjs$getRemainingItems(CraftingInput input) {
 		var list = NonNullList.withSize(input.size(), ItemStack.EMPTY);
@@ -36,16 +33,6 @@ public interface KubeJSCraftingRecipe extends CraftingRecipe {
 	}
 
 	default ItemStack kjs$assemble(CraftingInput input, HolderLookup.Provider registryAccess) {
-		if (!kjs$getStage().isEmpty()) {
-			/* FIXME
-			var player = getPlayer(((CraftingContainerKJS) container).kjs$getMenu());
-
-			if (player == null || !player.kjs$getStages().has(kjs$getStage())) {
-				return ItemStack.EMPTY;
-			}
-			 */
-		}
-
 		var modifyResult = kjs$getModifyResult();
 		var result = getResultItem(registryAccess);
 		//noinspection ConstantValue

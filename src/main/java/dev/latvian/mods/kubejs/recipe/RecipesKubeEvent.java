@@ -48,7 +48,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.world.item.crafting.RecipeManager;
-import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.neoforged.neoforge.common.conditions.ConditionalOps;
 import org.jetbrains.annotations.Nullable;
 
@@ -101,8 +100,6 @@ public class RecipesKubeEvent implements KubeEvent {
 	public final RecipeTypeFunction stonecutting;
 	public final RecipeTypeFunction smithing;
 	public final RecipeTypeFunction smithingTrim;
-
-	final RecipeSerializer<?> stageSerializer;
 
 	public RecipesKubeEvent(ServerScriptManager manager, ResourceManager resourceManager) {
 		ConsoleJS.SERVER.info("Initializing recipe event...");
@@ -175,8 +172,6 @@ public class RecipesKubeEvent implements KubeEvent {
 		recipeFunctions.put("stonecutting", stonecutting);
 		recipeFunctions.put("smithing", smithing);
 		recipeFunctions.put("smithingTrim", smithingTrim);
-
-		stageSerializer = BuiltInRegistries.RECIPE_SERIALIZER.get(ResourceLocation.parse("recipestages:stage"));
 	}
 
 	@HideFromJS

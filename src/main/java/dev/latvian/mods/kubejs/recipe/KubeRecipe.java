@@ -44,6 +44,7 @@ import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import org.apache.commons.lang3.mutable.MutableObject;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -485,10 +486,15 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 		}
 	}
 
+	/**
+	 * @deprecated It doesn't look like recipe staging is likely to return any time soon;
+	 *  if anybody finds a way to do it though or just needs this method for whatever reason,
+	 *  I am happy to keep it...
+	 */
+	@Deprecated(forRemoval = true)
 	public KubeRecipe stage(String s) {
-		json.addProperty(KubeJSCraftingRecipe.STAGE_KEY, s);
-		save();
-		return this;
+		throw new KubeRuntimeException("recipe.stage() is no longer supported by default due to vanilla changes!")
+			.source(sourceLine);
 	}
 
 	/**
@@ -516,13 +522,6 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 
 			if (newRecipe) {
 				json.addProperty("type", getSerializationTypeFunction().schemaType.serializerType);
-			}
-
-			if (type.event.stageSerializer != null && json.has(KubeJSCraftingRecipe.STAGE_KEY) && !type.idString.equals("recipestages:stage")) {
-				var staged = new JsonObject();
-				staged.addProperty("stage", json.get(KubeJSCraftingRecipe.STAGE_KEY).getAsString());
-				staged.add("recipe", json);
-				json = staged;
 			}
 
 			json.add(CHANGED_MARKER, sourceLine.toJson());
