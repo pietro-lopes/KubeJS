@@ -2,6 +2,7 @@ package dev.latvian.mods.kubejs.util;
 
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.serialization.DataResult;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.rhino.Context;
@@ -11,6 +12,8 @@ import dev.latvian.mods.rhino.Undefined;
 import java.time.Duration;
 import java.time.temporal.TemporalAmount;
 import java.util.Calendar;
+
+import static com.mojang.serialization.DataResult.error;
 
 public interface TimeJS {
 	static TemporalAmount wrapTemporalAmount(Context cx, Object o) {
@@ -121,6 +124,31 @@ public interface TimeJS {
 				yield d;
 			}
 		};
+	}
+
+	static DataResult<Duration> readDuration(String s) {
+		try {
+			var reader = new StringReader(s);
+			reader.skipWhitespace();
+
+			var temporalAmount = readTemporalAmount(reader);
+
+			return DataResult.success(switch (temporalAmount) {
+				case Duration d -> d;
+				case TickDuration(long ticks) -> Duration.ofMillis(ticks * 50L);
+				default -> {
+					var d = Duration.ZERO;
+
+					for (var unit : temporalAmount.getUnits()) {
+						d = d.plus(temporalAmount.get(unit), unit);
+					}
+
+					yield d;
+				}
+			});
+		} catch (CommandSyntaxException ex) {
+			return error(() -> "Error parsing %s from string: %s".formatted(s, ex));
+		}
 	}
 
 	static void appendTimestamp(StringBuilder builder, Calendar calendar) {
