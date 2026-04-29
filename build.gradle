@@ -11,9 +11,9 @@ plugins {
 
 var ENV = System.getenv()
 var CI = ENV.CI == "true"
-var isLocal = !ENV.containsKey("GITHUB_RUN_NUMBER")
+var isLocal = !ENV.containsKey("BUILD_NUMBER")
 
-version = "${mod_version}-${isLocal ? "local.${Instant.now().epochSecond}" : "build.${ENV.GITHUB_RUN_NUMBER}"}"
+version = "${mod_version}-${isLocal ? "local.${Instant.now().epochSecond}" : "build.${ENV.BUILD_NUMBER}"}"
 group = project.maven_group
 base.archivesName = project.archives_base_name
 

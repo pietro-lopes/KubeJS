@@ -1,12 +1,7 @@
-name: Java CI (Main)
+name: Release (2101)
 
 on:
-  push:
-    branches:
-      - "2101"
   workflow_dispatch:
-    branches:
-      - "2101"
     inputs:
       release_type:
         description: "Release Type"
@@ -20,10 +15,10 @@ on:
           - "none"
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
-    if: |
-      !contains(github.event.head_commit.message, '[ci skip]')
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,47 +35,56 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Increment build number
+        id: build_number
+        env:
+          GH_TOKEN: ${{ secrets.BUILD_NUMBER_TOKEN }}
+        run: |
+          current=$(gh api repos/$GITHUB_REPOSITORY/actions/variables/BUILD_NUMBER_2101 --jq '.value')
+          next=$((current + 1))
+          gh variable set BUILD_NUMBER_2101 --body "$next" --repo "$GITHUB_REPOSITORY"
+          echo "number=$next" >> "$GITHUB_OUTPUT"
+
       - name: Build with Gradle
-        uses: gradle/gradle-build-action@v3
-        with:
-          arguments: build -x test --stacktrace
+        run: ./gradlew build -x test --stacktrace
+        env:
+          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
 
       - name: Publish to latvian.dev Maven
-        uses: gradle/gradle-build-action@v3
+        run: ./gradlew publish --stacktrace
         env:
+          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
           MAVEN_URL: "https://maven.latvian.dev/releases"
           MAVEN_USERNAME: "lat"
           MAVEN_TOKEN: ${{ secrets.MAVEN_TOKEN }}
-        with:
-          arguments: publish --stacktrace
 
       - name: Publish to saps.dev Maven
-        uses: gradle/gradle-build-action@v3
+        run: ./gradlew publish --stacktrace
         env:
+          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
           MAVEN_URL: "https://maven.saps.dev/releases"
           MAVEN_USERNAME: "latvian"
           MAVEN_TOKEN: ${{ secrets.SAPS_TOKEN }}
-        with:
-          arguments: publish --stacktrace
 
       - name: Release to CurseForge
-        uses: gradle/gradle-build-action@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type != 'none' }}
+        if: ${{ inputs.release_type != 'none' }}
+        run: ./gradlew publishUnified --stacktrace
         env:
-          GIT_COMMIT: ${{ github.event.after }}
+          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
+          GIT_COMMIT: ${{ github.sha }}
           GIT_PREVIOUS_COMMIT: ${{ github.event.before }}
           CURSEFORGE_KEY: ${{ secrets.CURSEFORGE_KEY }}
           RELEASE_TYPE: ${{ inputs.release_type }}
-        with:
-          arguments: publishUnified --stacktrace
 
       - name: Release to Modrinth
-        uses: gradle/gradle-build-action@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type != 'none' }}
+        if: ${{ inputs.release_type != 'none' }}
+        run: ./gradlew publishUnified --stacktrace
         env:
-          GIT_COMMIT: ${{ github.event.after }}
+          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
+          GIT_COMMIT: ${{ github.sha }}
           GIT_PREVIOUS_COMMIT: ${{ github.event.before }}
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
           RELEASE_TYPE: ${{ inputs.release_type }}
-        with:
-          arguments: publishUnified --stacktrace
