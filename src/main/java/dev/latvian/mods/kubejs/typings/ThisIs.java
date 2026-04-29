@@ -17,7 +17,7 @@ import java.lang.annotation.Target;
  * </p>
  */
 @Documented
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface ThisIs {
 	Class<?> value();
