@@ -1,21 +1,29 @@
 package dev.latvian.mods.kubejs.recipe.component;
 
 import com.mojang.serialization.Codec;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.fluid.FluidWrapper;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.FluidMatch;
 import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
 import dev.latvian.mods.kubejs.util.OpsContainer;
 import dev.latvian.mods.rhino.type.TypeInfo;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.material.Fluid;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.crafting.FluidIngredient;
 import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
+import org.jspecify.annotations.Nullable;
 
-public record FluidIngredientComponent(RecipeComponentType<?> type, Codec<FluidIngredient> codec, boolean allowEmpty) implements RecipeComponent<FluidIngredient> {
-	public static final RecipeComponentType<FluidIngredient> FLUID_INGREDIENT = RecipeComponentType.unit(KubeJS.id("fluid_ingredient"), type -> new FluidIngredientComponent(type, FluidIngredient.CODEC_NON_EMPTY, false));
-	public static final RecipeComponentType<FluidIngredient> OPTIONAL_FLUID_INGREDIENT = RecipeComponentType.unit(KubeJS.id("optional_fluid_ingredient"), type -> new FluidIngredientComponent(type, FluidIngredient.CODEC, true));
+public record FluidIngredientComponent(ResourceKey<RecipeComponentType<?>> type, Codec<FluidIngredient> codec, boolean allowEmpty) implements RecipeComponent<FluidIngredient> {
+	public static final FluidIngredientComponent FLUID_INGREDIENT = new FluidIngredientComponent(
+		RecipeComponentType.builtin("fluid_ingredient"),
+		FluidIngredient.CODEC, false
+	);
+
+	public static final FluidIngredientComponent OPTIONAL_FLUID_INGREDIENT = new FluidIngredientComponent(
+		RecipeComponentType.builtin("optional_fluid_ingredient"),
+		FluidIngredient.CODEC, true
+	);
 
 	@Override
 	public TypeInfo typeInfo() {
@@ -23,7 +31,7 @@ public record FluidIngredientComponent(RecipeComponentType<?> type, Codec<FluidI
 	}
 
 	@Override
-	public boolean hasPriority(RecipeMatchContext cx, Object from) {
+	public boolean hasPriority(RecipeMatchContext cx, @Nullable Object from) {
 		return from instanceof SizedFluidIngredient || from instanceof FluidIngredient || from instanceof FluidStack || from instanceof Fluid;
 	}
 
@@ -34,13 +42,14 @@ public record FluidIngredientComponent(RecipeComponentType<?> type, Codec<FluidI
 
 	@Override
 	public boolean isEmpty(FluidIngredient value) {
-		return value.isEmpty();
+		return value.fluids().isEmpty();
 	}
+
 
 	@Override
 	public void buildUniqueId(UniqueIdBuilder builder, FluidIngredient value) {
-		if (!value.isEmpty()) {
-			builder.append(value.getStacks()[0].getFluid().kjs$getIdLocation());
+		if (!value.fluids().isEmpty()) {
+			builder.append(value.fluids().getFirst().value().kjs$getIdLocation());
 		}
 	}
 

@@ -5,7 +5,6 @@ import dev.latvian.mods.kubejs.DevProperties;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.entity.AttributeBuilder;
 import dev.latvian.mods.kubejs.plugin.builtin.event.StartupEvents;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -34,20 +33,20 @@ public class RegistryEventHandler {
 
 	@SuppressWarnings({"rawtypes", "unchecked"})
 	private static <T> void handleRegistryEvent(ResourceKey<Registry<T>> registryKey, RegisterEvent event) {
-		StartupEvents.REGISTRY.post(ScriptType.STARTUP, (ResourceKey) registryKey, new RegistryKubeEvent<>(registryKey));
+		StartupEvents.REGISTRY.post(ScriptType.STARTUP, registryKey, new RegistryKubeEvent<>(registryKey));
 
 		var objStorage = RegistryObjectStorage.of(registryKey);
 
 		if (objStorage.objects.isEmpty()) {
 			if (DevProperties.get().logRegistryEventObjects) {
-				KubeJS.LOGGER.info("Skipping {} registry - no objects to build", registryKey.location());
+				KubeJS.LOGGER.info("Skipping {} registry - no objects to build", registryKey.identifier());
 			}
 
 			return;
 		}
 
 		if (DevProperties.get().logRegistryEventObjects) {
-			KubeJS.LOGGER.info("Building {} objects of {} registry", objStorage.objects.size(), registryKey.location());
+			KubeJS.LOGGER.info("Building {} objects of {} registry", objStorage.objects.size(), registryKey.identifier());
 		}
 
 		int added = 0;
@@ -57,7 +56,7 @@ public class RegistryEventHandler {
 				event.register(registryKey, builder.id, builder::createTransformedObject);
 
 				if (DevProperties.get().logRegistryEventObjects) {
-					ConsoleJS.STARTUP.info("+ " + registryKey.location() + " | " + builder.id);
+					ScriptType.STARTUP.console.info("+ " + registryKey.identifier() + " | " + builder.id);
 				}
 
 				added++;
@@ -65,7 +64,7 @@ public class RegistryEventHandler {
 		}
 
 		if (!objStorage.objects.isEmpty() && DevProperties.get().logRegistryEventObjects) {
-			KubeJS.LOGGER.info("Registered {}/{} objects of {}", added, objStorage.objects.size(), registryKey.location());
+			KubeJS.LOGGER.info("Registered {}/{} objects of {}", added, objStorage.objects.size(), registryKey.identifier());
 		}
 	}
 }

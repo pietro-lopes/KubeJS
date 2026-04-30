@@ -1,43 +1,71 @@
 package dev.latvian.mods.kubejs.item;
 
 import dev.latvian.mods.rhino.util.RemapForJS;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
-import net.minecraft.world.item.Tier;
-import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ToolMaterial;
+import net.minecraft.world.item.component.Tool;
 import net.minecraft.world.level.block.Block;
 
-public class MutableToolTier implements Tier {
-	public final Tier parent;
-	private int uses;
+import java.util.List;
+
+public class MutableToolTier {
+	public final ToolMaterial parent;
+
+	private TagKey<Block> incorrectBlocksForDrops;
+	private int durability;
 	private float speed;
 	private float attackDamageBonus;
-	private TagKey<Block> incorrectBlocksForDrops;
 	private int enchantmentValue;
-	private Ingredient repairIngredient;
+	private TagKey<Item> repairItems;
 
-	public MutableToolTier(Tier p) {
+	public MutableToolTier(ToolMaterial p) {
 		parent = p;
-		uses = parent.getUses();
-		speed = parent.getSpeed();
-		attackDamageBonus = parent.getAttackDamageBonus();
-		incorrectBlocksForDrops = parent.getIncorrectBlocksForDrops();
-		enchantmentValue = parent.getEnchantmentValue();
-		repairIngredient = parent.getRepairIngredient();
+		incorrectBlocksForDrops = parent.incorrectBlocksForDrops();
+		durability = parent.durability();
+		speed = parent.speed();
+		attackDamageBonus = parent.attackDamageBonus();
+		enchantmentValue = parent.enchantmentValue();
+		repairItems = parent.repairItems();
 	}
 
-	@Override
+	public ToolMaterial build() {
+		return new ToolMaterial(
+			incorrectBlocksForDrops,
+			durability,
+			speed,
+			attackDamageBonus,
+			enchantmentValue,
+			repairItems
+		);
+	}
+
+	public Tool createToolProperties(TagKey<Block> minesEfficiently) {
+		var blocks = BuiltInRegistries.acquireBootstrapRegistrationLookup(BuiltInRegistries.BLOCK);
+		return new Tool(
+			List.of(
+				Tool.Rule.deniesDrops(blocks.getOrThrow(incorrectBlocksForDrops)),
+				Tool.Rule.minesAndDrops(blocks.getOrThrow(minesEfficiently), speed)
+			),
+			1.0F,
+			1,
+			true
+		);
+	}
+
 	@RemapForJS("getUses")
 	public int getUses() {
-		return uses;
+		return durability;
 	}
 
 	public void setUses(int i) {
-		uses = i;
+		durability = i;
 	}
 
-	@Override
 	@RemapForJS("getSpeed")
 	public float getSpeed() {
 		return speed;
@@ -47,30 +75,15 @@ public class MutableToolTier implements Tier {
 		speed = f;
 	}
 
-	@Override
 	@RemapForJS("getAttackDamageBonus")
 	public float getAttackDamageBonus() {
 		return attackDamageBonus;
-	}
-
-	public void setIncorrectBlocksForDropsTag(ResourceLocation tag) {
-		incorrectBlocksForDrops = BlockTags.create(tag);
-	}
-
-	public ResourceLocation getIncorrectBlocksForDropsTag() {
-		return incorrectBlocksForDrops.location();
-	}
-
-	@Override
-	public TagKey<Block> getIncorrectBlocksForDrops() {
-		return incorrectBlocksForDrops;
 	}
 
 	public void setAttackDamageBonus(float f) {
 		attackDamageBonus = f;
 	}
 
-	@Override
 	@RemapForJS("getEnchantmentValue")
 	public int getEnchantmentValue() {
 		return enchantmentValue;
@@ -80,13 +93,27 @@ public class MutableToolTier implements Tier {
 		enchantmentValue = i;
 	}
 
-	@Override
-	@RemapForJS("getVanillaRepairIngredient")
-	public Ingredient getRepairIngredient() {
-		return repairIngredient;
+	public void setIncorrectBlocksForDropsTag(Identifier tag) {
+		incorrectBlocksForDrops = BlockTags.create(tag);
 	}
 
-	public void setRepairIngredient(Ingredient in) {
-		repairIngredient = in;
+	public Identifier getIncorrectBlocksForDropsTag() {
+		return incorrectBlocksForDrops.location();
+	}
+
+	public TagKey<Block> getIncorrectBlocksForDrops() {
+		return incorrectBlocksForDrops;
+	}
+
+	public void setRepairItemsTag(Identifier tag) {
+		repairItems = ItemTags.create(tag);
+	}
+
+	public Identifier getRepairItemsTag() {
+		return repairItems.location();
+	}
+
+	public TagKey<Item> getRepairItems() {
+		return repairItems;
 	}
 }

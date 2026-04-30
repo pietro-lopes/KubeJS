@@ -9,34 +9,37 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
+import java.util.concurrent.CompletionStage;
 
 @Mixin(WorldLoader.class)
 public class WorldLoaderMixin {
-	@Inject(method = "load", at = @At(value = "INVOKE", target = "Lnet/minecraft/resources/RegistryDataLoader;load(Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/core/RegistryAccess;Ljava/util/List;)Lnet/minecraft/core/RegistryAccess$Frozen;", shift = At.Shift.BEFORE))
-	private static <D, R> void kjs$load(
-		WorldLoader.InitConfig initConfig,
-		WorldLoader.WorldDataSupplier<D> worldDataSupplier,
-		WorldLoader.ResultFactory<D, R> resultFactory,
-		Executor backgroundExecutor,
-		Executor gameExecutor,
-		CallbackInfoReturnable<CompletableFuture<R>> cir,
-		@Local RegistryAccess.Frozen registriesWithDimensions
+	@Inject(
+		method = "lambda$load$0",
+		at = @At(
+			value = "INVOKE",
+			target = "Lnet/minecraft/resources/RegistryDataLoader;load(Lnet/minecraft/server/packs/resources/ResourceManager;Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;",
+			shift = At.Shift.BEFORE
+		)
+	)
+	private static void kjs$load(
+		CallbackInfoReturnable<CompletionStage<?>> cir,
+		@Local(name = "worldgenLoadContext") RegistryAccess.Frozen worldgenLoadContext
 	) {
-		RegistryAccessContainer.current = new RegistryAccessContainer(registriesWithDimensions);
+		RegistryAccessContainer.current = new RegistryAccessContainer(worldgenLoadContext);
 	}
 
-	@Inject(method = "load", at = @At(value = "INVOKE", target = "Lcom/mojang/datafixers/util/Pair;getFirst()Ljava/lang/Object;", shift = At.Shift.BEFORE))
-	private static <D, R> void kjs$load2(
-		WorldLoader.InitConfig initConfig,
-		WorldLoader.WorldDataSupplier<D> worldDataSupplier,
-		WorldLoader.ResultFactory<D, R> resultFactory,
-		Executor backgroundExecutor,
-		Executor gameExecutor,
-		CallbackInfoReturnable<CompletableFuture<R>> cir,
-		@Local(ordinal = 1) RegistryAccess.Frozen registriesWithEverything
+	@Inject(
+		method = "lambda$load$2",
+		at = @At(
+			value = "INVOKE",
+			target = "Lcom/mojang/datafixers/util/Pair;getFirst()Ljava/lang/Object;",
+			shift = At.Shift.BEFORE
+		)
+	)
+	private static void kjs$load2(
+		CallbackInfoReturnable<CompletionStage<?>> cir,
+		@Local(argsOnly = true, ordinal = 1) RegistryAccess.Frozen initialWorldgenDimensions
 	) {
-		RegistryAccessContainer.current = new RegistryAccessContainer(registriesWithEverything);
+		RegistryAccessContainer.current = new RegistryAccessContainer(initialWorldgenDimensions);
 	}
 }

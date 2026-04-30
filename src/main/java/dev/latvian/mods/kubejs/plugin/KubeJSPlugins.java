@@ -9,7 +9,7 @@ import net.neoforged.fml.ModList;
 import net.neoforged.neoforgespi.locating.IModFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -17,11 +17,16 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
+/// Discovers, loads, and stores all [KubeJSPlugin] instances.
+/// Use [#forEachPlugin] to iterate over all loaded plugins.
 public class KubeJSPlugins {
 	private static final List<KubeJSPlugin> LIST = new ArrayList<>();
 	private static final List<String> GLOBAL_CLASS_FILTER = new ArrayList<>();
 	private static final ModResourceBindings BINDINGS = new ModResourceBindings();
 
+	/// Scans all mod JARs for plugin, [ClassFilter] and bindings definitions, and loads them if present.
+	///
+	/// @see #loadMod(String, IModFile, boolean)
 	public static void load(List<IModFile> modFiles, boolean loadClientPlugins) {
 		try {
 			for (var file : modFiles) {
@@ -34,22 +39,35 @@ public class KubeJSPlugins {
 		}
 	}
 
+	/// Given a mod file, checks if it has a file defining KubeJS plugins, class filter rules, or bindings,
+	/// and tries to load them if they exist.
+	///
+	/// For plugin syntax, see [#loadFromFile(java.util.stream.Stream, java.lang.String, boolean)],
+	/// and for bindings, see [ModResourceBindings]. Class filter syntax simply consists have lines
+	/// starting with either a '+' (allow) or '-' (deny) followed by a class or package name.
 	private static void loadMod(String modId, IModFile mod, boolean loadClientPlugins) throws IOException {
-		var pp = mod.findResource("kubejs.plugins.txt");
+		var contents = mod.getContents();
 
-		if (Files.exists(pp)) {
-			loadFromFile(Files.lines(pp), modId, loadClientPlugins);
+		var pluginData = contents.readFile("kubejs.plugins.txt");
+		if (pluginData != null) {
+			loadFromFile(new String(pluginData, StandardCharsets.UTF_8).lines(), modId, loadClientPlugins);
 		}
 
-		var pc = mod.findResource("kubejs.classfilter.txt");
-
-		if (Files.exists(pc)) {
-			GLOBAL_CLASS_FILTER.addAll(Files.readAllLines(pc));
+		var filterData = contents.readFile("kubejs.classfilter.txt");
+		if (filterData != null) {
+			GLOBAL_CLASS_FILTER.addAll(new String(filterData, StandardCharsets.UTF_8).lines().toList());
 		}
 
 		BINDINGS.readBindings(modId, mod);
 	}
 
+	/// Tries to load KubeJS plugins based on the contents of a `kubejs.plugins.txt` file.
+	///
+	/// A plugin definition consists of a FQCN referring to a class that implements [KubeJSPlugin],
+	/// followed by an optional list of *mod ids* which are required for the plugin to be loaded.
+	/// The string "client" may be used to ensure a plugin only loads on the client side.
+	///
+	/// Filters can be used to make sure that certain plugins only load if a mod is present.
 	private static void loadFromFile(Stream<String> contents, String source, boolean loadClientPlugins) {
 		KubeJS.LOGGER.info("Found plugin source {}", source);
 
@@ -62,14 +80,14 @@ public class KubeJSPlugins {
 					if (line[i].equalsIgnoreCase("client")) {
 						if (!loadClientPlugins) {
 							if (DevProperties.get().logSkippedPlugins) {
-								KubeJS.LOGGER.warn("Plugin {} does not load on server side, skipping", line[0]);
+								KubeJS.LOGGER.warn("Plugin " + line[0] + " does not load on server side, skipping");
 							}
 
 							return Stream.empty();
 						}
 					} else if (!ModList.get().isLoaded(line[i])) {
 						if (DevProperties.get().logSkippedPlugins) {
-							KubeJS.LOGGER.warn("Plugin {} does not have required mod '{}' loaded, skipping", line[0], line[i]);
+							KubeJS.LOGGER.warn("Plugin " + line[0] + " does not have required mod '" + line[i] + "' loaded, skipping");
 						}
 
 						return Stream.empty();

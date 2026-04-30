@@ -3,7 +3,6 @@ package dev.latvian.mods.kubejs.client;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.KubeJSCommon;
 import dev.latvian.mods.kubejs.KubeJSPaths;
-import dev.latvian.mods.kubejs.client.highlight.HighlightRenderer;
 import dev.latvian.mods.kubejs.item.ModifyItemTooltipsKubeEvent;
 import dev.latvian.mods.kubejs.net.KubeServerData;
 import dev.latvian.mods.kubejs.net.NetworkKubeEvent;
@@ -19,16 +18,15 @@ import dev.latvian.mods.kubejs.util.RegistryAccessContainer;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.CreativeModeTabs;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -43,8 +41,8 @@ import java.util.List;
 import java.util.Map;
 
 public class KubeJSClient extends KubeJSCommon {
-	public static final ResourceLocation WHITE_TEXTURE = ResourceLocation.parse("textures/misc/white.png");
-	public static final ResourceLocation RECIPE_BUTTON_TEXTURE = ResourceLocation.parse("textures/gui/recipe_button.png");
+	public static final Identifier WHITE_TEXTURE = Identifier.parse("textures/misc/white.png");
+	public static final Identifier RECIPE_BUTTON_TEXTURE = Identifier.parse("textures/gui/recipe_button.png");
 
 	public static final Map<GeneratedDataStage, VirtualAssetPack> CLIENT_PACKS = new EnumMap<>(GeneratedDataStage.class);
 	public static List<ItemTooltipData> clientItemTooltips = List.of();
@@ -70,7 +68,7 @@ public class KubeJSClient extends KubeJSCommon {
 				try {
 					KubeJS.LOGGER.info("Loaded default options from kubejs/config/defaultoptions.txt");
 					final PrintWriter printwriter = new PrintWriter(new OutputStreamWriter(new FileOutputStream(optionsFile), StandardCharsets.UTF_8));
-					printwriter.println("version:" + SharedConstants.getCurrentVersion().getDataVersion().getVersion());
+					printwriter.println("version:" + SharedConstants.getCurrentVersion().dataVersion().version());
 					printwriter.print(Files.readString(defOptions));
 					printwriter.close();
 				} catch (IOException ex) {
@@ -156,21 +154,13 @@ public class KubeJSClient extends KubeJSCommon {
 	@Override
 	public String getWebServerWindowTitle() {
 		var mc = Minecraft.getInstance();
-		return mc.getGameProfile().getName() + ", " + mc.kjs$getTitle();
-	}
-
-	public static void loadPostChains(Minecraft mc) {
-		HighlightRenderer.INSTANCE.loadPostChains(mc);
-	}
-
-	public static void resizePostChains(int width, int height) {
-		HighlightRenderer.INSTANCE.resizePostChains(width, height);
+		return mc.getGameProfile().name() + ", " + mc.kjs$getTitle();
 	}
 
 	private static final char[] POWER = {'K', 'M', 'B', 'T'};
 
 	public static String formatNumber(int count) {
-		if (Screen.hasAltDown()) {
+		if (Minecraft.getInstance().hasAltDown()) {
 			return String.format("%,d", count);
 		}
 
@@ -190,15 +180,18 @@ public class KubeJSClient extends KubeJSCommon {
 		}
 	}
 
-	public static int drawStackSize(GuiGraphics graphics, Font font, int size, int x, int y, int color, boolean dropShadow) {
+	public static int drawStackSize(GuiGraphicsExtractor graphics, Font font, int size, int x, int y, int color, boolean dropShadow) {
 		var str = formatNumber(size);
 		int w = font.width(str);
 		float scale = ClientProperties.get().shrinkStackSizeText ? (str.length() >= 4 ? 0.5F : str.length() == 3 ? 0.75F : 1F) : 1F;
-		graphics.pose().pushPose();
-		graphics.pose().translate((int) (x + 16F - (w - 1F) * scale), (int) (y + 16F - 7F * scale), 0F);
-		graphics.pose().scale(scale, scale, 1F);
-		int s = graphics.drawString(font, str, 0F, 0F, color, dropShadow);
-		graphics.pose().popPose();
-		return Mth.ceil(s * scale);
+
+		graphics.pose().pushMatrix();
+		graphics.pose().translate(x + 16F - (w - 1F) * scale, y + 16F - 7F * scale);
+		graphics.pose().scale(scale, scale);
+
+		graphics.text(font, str, 0, 0, color, dropShadow);
+
+		graphics.pose().popMatrix();
+		return Mth.ceil(w * scale);
 	}
 }

@@ -2,26 +2,25 @@ package dev.latvian.mods.kubejs.core.mixin;
 
 import dev.latvian.mods.kubejs.core.ItemKJS;
 import dev.latvian.mods.kubejs.item.ItemBuilder;
-import dev.latvian.mods.kubejs.item.ItemStackKey;
-import dev.latvian.mods.rhino.util.HideFromJS;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponentMap;
-import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
+import net.minecraft.world.item.ItemUseAnimation;
 import net.minecraft.world.item.ItemUtils;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.item.UseAnim;
+import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.Level;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Mutable;
@@ -34,37 +33,30 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
+import java.util.function.Consumer;
 
 @Mixin(value = Item.class, priority = 1001)
 @RemapPrefixForJS("kjs$")
 public abstract class ItemMixin implements ItemKJS {
 	@Shadow
-	private DataComponentMap components;
+	public abstract DataComponentMap components();
 
 	@Shadow
 	@Final
 	private Holder.Reference<Item> builtInRegistryHolder;
 
 	@Unique
-	private ItemBuilder kjs$itemBuilder;
+	private @Nullable ItemBuilder kjs$itemBuilder;
 
 	@Unique
-	private Map<String, Object> kjs$typeData;
+	private @Nullable Map<String, Object> kjs$typeData;
 
 	@Unique
-	private Ingredient kjs$asIngredient;
+	private @Nullable ResourceKey<Item> kjs$registryKey;
 
 	@Unique
-	private ItemStackKey kjs$typeItemStackKey;
-
-	@Unique
-	private ResourceKey<Item> kjs$registryKey;
-
-	@Unique
-	private String kjs$id;
+	private @Nullable String kjs$id;
 
 	@Override
 	@Nullable
@@ -79,11 +71,7 @@ public abstract class ItemMixin implements ItemKJS {
 
 	@Override
 	public ResourceKey<Item> kjs$getKey() {
-		if (kjs$registryKey == null) {
-			kjs$registryKey = ItemKJS.super.kjs$getKey();
-		}
-
-		return kjs$registryKey;
+		return kjs$asHolder().getKey();
 	}
 
 	@Override
@@ -110,17 +98,9 @@ public abstract class ItemMixin implements ItemKJS {
 	}
 
 	@Override
-	@HideFromJS
-	public <T> void kjs$overrideComponent(DataComponentType<T> type, @Nullable T value) {
-		var builder = DataComponentMap.builder().addAll(this.components);
-		builder.set(type, value);
-		this.components = Item.Properties.COMPONENT_INTERNER.intern(Item.Properties.validateComponents(builder.build()));
-	}
-
-	@Override
 	@Accessor("craftingRemainingItem")
 	@Mutable
-	public abstract void kjs$setCraftingRemainder(Item i);
+	public abstract void kjs$setCraftingRemainder(ItemStackTemplate i);
 
 	@Inject(method = "isFoil", at = @At("HEAD"), cancellable = true)
 	private void isFoil(ItemStack itemStack, CallbackInfoReturnable<Boolean> ci) {
@@ -130,9 +110,18 @@ public abstract class ItemMixin implements ItemKJS {
 	}
 
 	@Inject(method = "appendHoverText", at = @At("RETURN"))
-	private void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag flagIn, CallbackInfo ci) {
+	private void appendHoverText(
+		ItemStack itemStack,
+		Item.TooltipContext context,
+		TooltipDisplay display,
+		Consumer<Component> builder,
+		TooltipFlag tooltipFlag,
+		CallbackInfo ci
+	) {
 		if (kjs$itemBuilder != null && !kjs$itemBuilder.tooltip.isEmpty()) {
-			tooltip.addAll(kjs$itemBuilder.tooltip);
+			for (var c : kjs$itemBuilder.tooltip) {
+				builder.accept(c);
+			}
 		}
 	}
 
@@ -165,7 +154,7 @@ public abstract class ItemMixin implements ItemKJS {
 	}
 
 	@Inject(method = "getUseAnimation", at = @At("HEAD"), cancellable = true)
-	private void getUseAnimation(ItemStack itemStack, CallbackInfoReturnable<UseAnim> ci) {
+	private void getUseAnimation(ItemStack itemStack, CallbackInfoReturnable<ItemUseAnimation> ci) {
 		if (kjs$itemBuilder != null && kjs$itemBuilder.anim != null) {
 			ci.setReturnValue(kjs$itemBuilder.anim);
 		}
@@ -183,13 +172,12 @@ public abstract class ItemMixin implements ItemKJS {
 	}
 
 	@Inject(method = "use", at = @At("HEAD"), cancellable = true)
-	private void use(Level level, Player player, InteractionHand interactionHand, CallbackInfoReturnable<InteractionResultHolder<ItemStack>> ci) {
+	private void use(Level level, Player player, InteractionHand hand, CallbackInfoReturnable<InteractionResult> cir) {
 		if (kjs$itemBuilder != null && kjs$itemBuilder.use != null) {
-			ItemStack itemStack = player.getItemInHand(interactionHand);
-			if (kjs$itemBuilder.use.use(level, player, interactionHand)) {
-				ci.setReturnValue(ItemUtils.startUsingInstantly(level, player, interactionHand));
+			if (kjs$itemBuilder.use.use(level, player, hand)) {
+				cir.setReturnValue(ItemUtils.startUsingInstantly(level, player, hand));
 			} else {
-				ci.setReturnValue(InteractionResultHolder.fail(itemStack));
+				cir.setReturnValue(InteractionResult.FAIL);
 			}
 		}
 	}
@@ -201,28 +189,23 @@ public abstract class ItemMixin implements ItemKJS {
 		}
 	}
 
-	@Inject(method = "releaseUsing", at = @At("HEAD"))
-	private void releaseUsing(ItemStack itemStack, Level level, LivingEntity livingEntity, int i, CallbackInfo ci) {
+	@Inject(method = "releaseUsing", at = @At("HEAD"), cancellable = true)
+	private void releaseUsing(ItemStack itemStack, Level level, LivingEntity entity, int remainingTime, CallbackInfoReturnable<Boolean> cir) {
 		if (kjs$itemBuilder != null && kjs$itemBuilder.releaseUsing != null) {
-			kjs$itemBuilder.releaseUsing.releaseUsing(itemStack, level, livingEntity, i);
+			kjs$itemBuilder.releaseUsing.releaseUsing(itemStack, level, entity, remainingTime);
 		}
 	}
 
 	@Inject(method = "hurtEnemy", at = @At("HEAD"), cancellable = true)
-	private void hurtEnemy(ItemStack itemStack, LivingEntity livingEntity, LivingEntity livingEntity2, CallbackInfoReturnable<Boolean> cir) {
+	private void hurtEnemy(ItemStack itemStack, LivingEntity mob, LivingEntity attacker, CallbackInfo ci) {
 		if (kjs$itemBuilder != null && kjs$itemBuilder.hurtEnemy != null) {
-			cir.setReturnValue(kjs$itemBuilder.hurtEnemy.test(new ItemBuilder.HurtEnemyContext(itemStack, livingEntity, livingEntity2)));
+			kjs$itemBuilder.hurtEnemy.test(new ItemBuilder.HurtEnemyContext(itemStack, mob, attacker));
 		}
 	}
 
 	@Override
 	public Ingredient kjs$asIngredient() {
-		if (kjs$asIngredient == null) {
-			var is = new ItemStack(kjs$self());
-			kjs$asIngredient = is.isEmpty() ? Ingredient.EMPTY : Ingredient.of(Stream.of(is));
-		}
-
-		return kjs$asIngredient;
+		return Ingredient.of(kjs$self());
 	}
 
 	@Override
@@ -231,16 +214,7 @@ public abstract class ItemMixin implements ItemKJS {
 	public abstract void kjs$setNameKey(String key);
 
 	@Override
-	public ItemStackKey kjs$getTypeItemStackKey() {
-		if (kjs$typeItemStackKey == null) {
-			kjs$typeItemStackKey = new ItemStackKey(kjs$self(), null);
-		}
-
-		return kjs$typeItemStackKey;
-	}
-
-	@Override
-	@Accessor("canRepair")
+	@Accessor("canCombineRepair")
 	@Mutable
 	public abstract void kjs$setCanRepair(boolean repairable);
 }

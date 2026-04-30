@@ -6,7 +6,7 @@ import dev.latvian.mods.kubejs.text.tooltip.ItemTooltipData;
 import dev.latvian.mods.kubejs.text.tooltip.TooltipRequirements;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.crafting.Ingredient;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
@@ -22,7 +22,7 @@ public class ModifyItemTooltipsKubeEvent implements KubeEvent {
 	private void modify(@Nullable Ingredient filter, Optional<TooltipRequirements> requirements, Consumer<TextActionBuilder> consumer) {
 		var builder = new TextActionBuilder();
 		consumer.accept(builder);
-		callback.accept(new ItemTooltipData(filter == null || filter.isEmpty() || filter.kjs$isWildcard() ? Optional.empty() : Optional.of(filter), requirements, List.copyOf(builder.actions)));
+		callback.accept(new ItemTooltipData(filter == null || filter.kjs$isWildcard() ? Optional.empty() : Optional.of(filter), requirements, List.copyOf(builder.actions)));
 	}
 
 	public void modify(Ingredient filter, TooltipRequirements requirements, Consumer<TextActionBuilder> consumer) {

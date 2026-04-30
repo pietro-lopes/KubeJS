@@ -1,90 +1,54 @@
-name: Release (2101)
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
-      release_type:
-        description: "Release Type"
-        required: true
+      target_version:
+        type: string
+        required: false
+        description: "mod version | empty = next option"
+      update_type:
         type: choice
+        required: false
+        description: "update type"
+        default: "minor"
+        options:
+          - "major"
+          - "minor"
+          - "patch"
+          - "none"
+      release_type:
+        type: choice
+        required: true
+        description: "type of release"
         default: "release"
         options:
-          - "release"
-          - "beta"
           - "alpha"
-          - "none"
+          - "beta"
+          - "release"
+      debug:
+        type: boolean
+        required: false
+        default: false
+        description: "enable debug mode (GitHub only)"
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 5
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "21"
-          cache: gradle
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Increment build number
-        id: build_number
-        env:
-          GH_TOKEN: ${{ secrets.BUILD_NUMBER_TOKEN }}
-        run: |
-          current=$(gh api repos/$GITHUB_REPOSITORY/actions/variables/BUILD_NUMBER_2101 --jq '.value')
-          next=$((current + 1))
-          gh variable set BUILD_NUMBER_2101 --body "$next" --repo "$GITHUB_REPOSITORY"
-          echo "number=$next" >> "$GITHUB_OUTPUT"
-
-      - name: Build with Gradle
-        run: ./gradlew build -x test --stacktrace
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
-
-      - name: Publish to latvian.dev Maven
-        run: ./gradlew publish --stacktrace
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
-          MAVEN_URL: "https://maven.latvian.dev/releases"
-          MAVEN_USERNAME: "lat"
-          MAVEN_TOKEN: ${{ secrets.MAVEN_TOKEN }}
-
-      - name: Publish to saps.dev Maven
-        run: ./gradlew publish --stacktrace
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
-          MAVEN_URL: "https://maven.saps.dev/releases"
-          MAVEN_USERNAME: "latvian"
-          MAVEN_TOKEN: ${{ secrets.SAPS_TOKEN }}
-
-      - name: Release to CurseForge
-        if: ${{ inputs.release_type != 'none' }}
-        run: ./gradlew publishUnified --stacktrace
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
-          GIT_COMMIT: ${{ github.sha }}
-          GIT_PREVIOUS_COMMIT: ${{ github.event.before }}
-          CURSEFORGE_KEY: ${{ secrets.CURSEFORGE_KEY }}
-          RELEASE_TYPE: ${{ inputs.release_type }}
-
-      - name: Release to Modrinth
-        if: ${{ inputs.release_type != 'none' }}
-        run: ./gradlew publishUnified --stacktrace
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
-          GIT_COMMIT: ${{ github.sha }}
-          GIT_PREVIOUS_COMMIT: ${{ github.event.before }}
-          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-          RELEASE_TYPE: ${{ inputs.release_type }}
+  redirect:
+    uses: AlmostReliable/.github/.github/workflows/release-nf.yml@main
+    secrets: inherit
+    with:
+      java-distribution: "microsoft"
+      java-version: "25"
+      mod_name: "KubeJS"
+      curseforge_id: "238086"
+      modrinth_id: "umyGl7zF"
+      dependencies: |
+        rhino(required){curseforge:416294}{modrinth:sk9knFPE}
+        jei(optional){curseforge:238222}{modrinth:u6dRKJwZ}
+        rei(optional){curseforge:310111}{modrinth:nfn13YXA}
+        emi(optional){curseforge:580555}{modrinth:fRiHVvU7}
+      target_version: ${{ github.event.inputs.target_version }}
+      update_type: ${{ github.event.inputs.update_type }}
+      release_type: ${{ github.event.inputs.release_type }}
+      loaders: "neoforge"
+      debug: ${{ github.event.inputs.debug }}

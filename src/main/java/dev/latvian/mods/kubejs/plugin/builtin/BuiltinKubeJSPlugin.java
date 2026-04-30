@@ -23,11 +23,6 @@ import dev.latvian.mods.kubejs.block.custom.SlabBlockBuilder;
 import dev.latvian.mods.kubejs.block.custom.StairBlockBuilder;
 import dev.latvian.mods.kubejs.block.custom.TrapdoorBlockBuilder;
 import dev.latvian.mods.kubejs.block.custom.WallBlockBuilder;
-import dev.latvian.mods.kubejs.block.entity.BlockEntityAttachmentRegistry;
-import dev.latvian.mods.kubejs.block.entity.CustomCapabilityAttachment;
-import dev.latvian.mods.kubejs.block.entity.EnergyStorageAttachment;
-import dev.latvian.mods.kubejs.block.entity.FluidTankAttachment;
-import dev.latvian.mods.kubejs.block.entity.InventoryAttachment;
 import dev.latvian.mods.kubejs.block.state.BlockStatePredicate;
 import dev.latvian.mods.kubejs.client.icon.AtlasSpriteKubeIcon;
 import dev.latvian.mods.kubejs.client.icon.ItemKubeIcon;
@@ -47,13 +42,12 @@ import dev.latvian.mods.kubejs.fluid.FluidWrapper;
 import dev.latvian.mods.kubejs.fluid.ThickFluidBuilder;
 import dev.latvian.mods.kubejs.fluid.ThinFluidBuilder;
 import dev.latvian.mods.kubejs.generator.KubeDataGenerator;
-import dev.latvian.mods.kubejs.item.ArmorMaterialBuilder;
 import dev.latvian.mods.kubejs.item.ItemBuilder;
 import dev.latvian.mods.kubejs.item.ItemEnchantmentsWrapper;
 import dev.latvian.mods.kubejs.item.ItemModificationKubeEvent;
 import dev.latvian.mods.kubejs.item.ItemPredicate;
 import dev.latvian.mods.kubejs.item.ItemTintFunction;
-import dev.latvian.mods.kubejs.item.ItemToolTiers;
+import dev.latvian.mods.kubejs.item.ItemToolMaterials;
 import dev.latvian.mods.kubejs.item.JukeboxSongBuilder;
 import dev.latvian.mods.kubejs.item.creativetab.CreativeTabBuilder;
 import dev.latvian.mods.kubejs.item.custom.ArmorItemBuilder;
@@ -103,7 +97,6 @@ import dev.latvian.mods.kubejs.plugin.builtin.wrapper.TextIcons;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.TextWrapper;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.UUIDWrapper;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.UtilsWrapper;
-import dev.latvian.mods.kubejs.recipe.CompostableRecipesKubeEvent;
 import dev.latvian.mods.kubejs.recipe.component.BlockComponent;
 import dev.latvian.mods.kubejs.recipe.component.BlockStateComponent;
 import dev.latvian.mods.kubejs.recipe.component.BookCategoryComponent;
@@ -156,7 +149,7 @@ import dev.latvian.mods.kubejs.script.BindingRegistry;
 import dev.latvian.mods.kubejs.script.DataComponentTypeInfoRegistry;
 import dev.latvian.mods.kubejs.script.PlatformWrapper;
 import dev.latvian.mods.kubejs.script.RecordDefaultsRegistry;
-import dev.latvian.mods.kubejs.script.ScriptType;
+import dev.latvian.mods.kubejs.script.ScriptManager;
 import dev.latvian.mods.kubejs.script.TypeDescriptionRegistry;
 import dev.latvian.mods.kubejs.script.TypeWrapperRegistry;
 import dev.latvian.mods.kubejs.server.ScheduledServerEvent;
@@ -165,7 +158,7 @@ import dev.latvian.mods.kubejs.util.FluidAmounts;
 import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.kubejs.util.JsonIO;
 import dev.latvian.mods.kubejs.util.JsonUtils;
-import dev.latvian.mods.kubejs.util.KubeResourceLocation;
+import dev.latvian.mods.kubejs.util.KubeIdentifier;
 import dev.latvian.mods.kubejs.util.MobEffectUtil;
 import dev.latvian.mods.kubejs.util.NBTIOWrapper;
 import dev.latvian.mods.kubejs.util.NameProvider;
@@ -183,10 +176,8 @@ import dev.latvian.mods.kubejs.web.LocalWebServerRegistry;
 import dev.latvian.mods.kubejs.web.local.KubeJSWeb;
 import dev.latvian.mods.rhino.type.RecordTypeInfo;
 import dev.latvian.mods.rhino.type.TypeInfo;
-import net.minecraft.Util;
 import net.minecraft.commands.arguments.selector.EntitySelector;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Holder;
 import net.minecraft.core.Vec3i;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponentPatch;
@@ -198,46 +189,47 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CollectionTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.ChatType;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.stats.Stat;
 import net.minecraft.stats.Stats;
 import net.minecraft.util.ColorRGBA;
 import net.minecraft.util.Unit;
+import net.minecraft.util.Util;
 import net.minecraft.util.valueproviders.FloatProvider;
 import net.minecraft.util.valueproviders.IntProvider;
 import net.minecraft.world.LockCode;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.entity.MobCategory;
-import net.minecraft.world.entity.animal.WolfVariant;
-import net.minecraft.world.entity.decoration.Painting;
-import net.minecraft.world.entity.decoration.PaintingVariant;
-import net.minecraft.world.item.ArmorItem;
+import net.minecraft.world.entity.animal.wolf.WolfVariant;
+import net.minecraft.world.entity.decoration.painting.PaintingVariant;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.JukeboxSong;
-import net.minecraft.world.item.Tier;
-import net.minecraft.world.item.armortrim.TrimMaterial;
-import net.minecraft.world.item.armortrim.TrimPattern;
+import net.minecraft.world.item.ToolMaterial;
+import net.minecraft.world.item.equipment.ArmorMaterial;
 import net.minecraft.world.item.component.BlockItemStateProperties;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.item.component.Fireworks;
+import net.minecraft.world.item.component.ItemAttributeModifiers;
 import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.item.enchantment.providers.EnchantmentProvider;
+import net.minecraft.world.item.equipment.ArmorType;
+import net.minecraft.world.item.equipment.trim.TrimMaterial;
+import net.minecraft.world.item.equipment.trim.TrimPattern;
 import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterList;
@@ -262,9 +254,9 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.RuleTest;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureProcessorList;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureProcessorType;
 import net.minecraft.world.level.levelgen.synth.NormalNoise;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.storage.loot.LootContext;
-import net.minecraft.world.level.storage.loot.functions.CopyNameFunction;
 import net.minecraft.world.level.storage.loot.providers.number.NumberProvider;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -276,6 +268,8 @@ import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 import net.neoforged.neoforge.registries.datamaps.builtin.FurnaceFuel;
 import net.neoforged.neoforge.registries.datamaps.builtin.NeoForgeDataMaps;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.item.ItemResource;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -288,6 +282,7 @@ import java.time.Duration;
 import java.time.temporal.TemporalAmount;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -352,7 +347,6 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 		registry.addDefault(Registries.VILLAGER_TYPE, VillagerTypeBuilder.class, VillagerTypeBuilder::new);
 		registry.addDefault(Registries.VILLAGER_PROFESSION, VillagerProfessionBuilder.class, VillagerProfessionBuilder::new);
 		registry.addDefault(Registries.CREATIVE_MODE_TAB, CreativeTabBuilder.class, CreativeTabBuilder::new);
-		registry.addDefault(Registries.ARMOR_MATERIAL, ArmorMaterialBuilder.class, ArmorMaterialBuilder::new);
 
 		// FIXME registry.addDefault(Registries.ENCHANTMENT, EnchantmentBuilder.class, EnchantmentBuilder::new);
 		registry.addDefault(Registries.PAINTING_VARIANT, PaintingVariantBuilder.class, PaintingVariantBuilder::new);
@@ -459,6 +453,7 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 		bindings.add("EntitySelector", EntitySelectorWrapper.class);
 
 		bindings.add("Fluid", FluidWrapper.class);
+		bindings.add("Fluids", Fluids.class);
 
 		bindings.add("SECOND", 1000L);
 		bindings.add("MINUTE", 60000L);
@@ -504,8 +499,8 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 		registry.register(Duration.class, TimeJS::wrapDuration);
 		registry.register(TickDuration.class, TickDuration::wrap);
 
-		registry.register(ResourceLocation.class, ID::mc);
-		registry.register(KubeResourceLocation.class, KubeResourceLocation::wrap);
+		registry.register(Identifier.class, ID::mc);
+		registry.register(KubeIdentifier.class, KubeIdentifier::wrap);
 		registry.register(CompoundTag.class, (from, target) -> NBTWrapper.isTagCompound(from), NBTWrapper::wrapCompound);
 		registry.register(CollectionTag.class, (from, target) -> NBTWrapper.isTagCollection(from), NBTWrapper::wrapCollection);
 		registry.register(ListTag.class, (from, target) -> NBTWrapper.isTagCollection(from), NBTWrapper::wrapListTag);
@@ -528,15 +523,20 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 		registry.register(FloatProvider.class, MiscWrappers::wrapFloatProvider);
 		registry.register(NumberProvider.class, MiscWrappers::wrapNumberProvider);
 		registry.registerEnumFromStringCodec(LootContext.EntityTarget.class, LootContext.EntityTarget.CODEC);
-		registry.registerEnumFromStringCodec(CopyNameFunction.NameSource.class, CopyNameFunction.NameSource.CODEC);
+
+		// No equivalent
+		//registry.registerEnumFromStringCodec(CopyNameFunction.NameSource.class, CopyNameFunction.NameSource.CODEC);
+
 		// FIXME registry.register(Enchantment.Cost.class, EnchantmentBuilder::wrapCost);
-		registry.registerEnumFromStringCodec(ArmorItem.Type.class, ArmorItem.Type.CODEC);
+
+		registry.registerEnumFromStringCodec(ArmorType.class, ArmorType.CODEC);
 		registry.register(BlockSetType.class, BlockWrapper::wrapSetType);
 		registry.register(BlockState.class, BlockWrapper::wrapBlockState);
 		registry.register(ItemAbility.class, ItemWrapper::wrapItemAbility);
 		registry.register(ColorRGBA.class, ColorWrapper::wrapColorRGBA);
 
 		// KubeJS //
+		// TODO(low): which way makes more sense for wrappers? stack => template or template => stack?
 		registry.register(ItemStack.class, ItemWrapper::wrap);
 		registry.register(Ingredient.class, IngredientWrapper::wrap);
 		registry.register(ItemPredicate.class, ItemPredicate::wrap);
@@ -548,7 +548,11 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 		registry.register(SizedFluidIngredient.class, FluidWrapper::wrapSizedIngredient);
 		registry.register(RecipeFilter.class, RecipeFilter::wrap);
 		registry.register(SlotFilter.class, SlotFilter::wrap);
-		registry.register(Tier.class, ItemToolTiers::wrap);
+
+
+		registry.register(ArmorMaterial.class, o -> o instanceof ArmorMaterial armorMaterial ? armorMaterial : null);
+		registry.register(ToolMaterial.class, ItemToolMaterials::wrap);
+
 		registry.register(PlayerSelector.class, PlayerSelector::wrap);
 		registry.register(DamageSource.class, DamageSourceWrapper::wrap);
 		registry.register(EntitySelector.class, EntitySelectorWrapper::wrap);
@@ -569,6 +573,7 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 		registry.register(ClickEvent.class, TextWrapper::wrapClickEvent);
 		registry.registerAlias(Component.class, TextWrapper.TYPE_INFO, Function.identity());
 		registry.registerAlias(ItemLore.class, TypeInfo.RAW_LIST.withParams(TextWrapper.TYPE_INFO), TextWrapper::lore);
+		registry.registerAlias(ItemAttributeModifiers.class, TypeInfo.RAW_LIST.withParams(TypeInfo.of(ItemAttributeModifiers.Entry.class)), ItemAttributeModifiers::new);
 
 		// codecs
 		registry.registerCodec(Fireworks.class, Fireworks.CODEC);
@@ -577,9 +582,14 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 		// alias
 		registry.registerAlias(Unit.class, TypeInfo.NONE, o -> Unit.INSTANCE);
 		registry.registerAlias(CustomData.class, CompoundTag.class, CustomData::of);
-		registry.registerAlias(CustomModelData.class, TypeInfo.PRIMITIVE_INT, CustomModelData::new);
+		registry.registerAlias(CustomModelData.class, TypeInfo.PRIMITIVE_INT, (Integer i) ->
+			new CustomModelData(List.of(), List.of(), List.of(), List.of(i))
+		);
 		registry.registerAlias(LockCode.class, TypeInfo.STRING, LockCode::new);
 		registry.registerAlias(BlockItemStateProperties.class, TypeInfo.RAW_MAP.withParams(TypeInfo.STRING, TypeInfo.STRING), BlockItemStateProperties::new);
+
+		registry.registerAlias(ItemResource.class, ItemStack.class, ItemResource::of);
+		registry.registerAlias(FluidResource.class, FluidStack.class, FluidResource::of);
 	}
 
 	@Override
@@ -602,91 +612,87 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 
 	@Override
 	public void registerRecipeComponents(RecipeComponentTypeRegistry registry) {
-		registry.register(IgnoreComponent.TYPE);
-		registry.register(BooleanComponent.BOOLEAN);
-		registry.register(StringComponent.STRING);
-		registry.register(StringComponent.OPTIONAL_STRING);
-		registry.register(StringComponent.ID);
-		registry.register(CharacterComponent.CHARACTER);
+		registry.unit(IgnoreComponent.INSTANCE);
+		registry.unit(BooleanComponent.BOOLEAN);
+		registry.unit(StringComponent.STRING);
+		registry.unit(StringComponent.OPTIONAL_STRING);
+		registry.unit(StringComponent.ID);
+		registry.unit(CharacterComponent.CHARACTER);
 
-		registry.register(NumberComponent.INT_TYPE);
-		registry.register(NumberComponent.LONG_TYPE);
-		registry.register(NumberComponent.FLOAT_TYPE);
-		registry.register(NumberComponent.DOUBLE_TYPE);
-		registry.register(NumberComponent.NON_NEGATIVE_INT);
-		registry.register(NumberComponent.POSITIVE_INT);
-		registry.register(NumberComponent.NON_NEGATIVE_LONG);
-		registry.register(NumberComponent.POSITIVE_LONG);
-		registry.register(NumberComponent.NON_NEGATIVE_FLOAT);
-		registry.register(NumberComponent.POSITIVE_FLOAT);
-		registry.register(NumberComponent.NON_NEGATIVE_DOUBLE);
-		registry.register(NumberComponent.POSITIVE_DOUBLE);
+		registry.register(NumberComponent.INT_TYPE, NumberComponent.INT_CODEC);
+		registry.register(NumberComponent.LONG_TYPE, NumberComponent.LONG_CODEC);
+		registry.register(NumberComponent.FLOAT_TYPE, NumberComponent.FLOAT_CODEC);
+		registry.register(NumberComponent.DOUBLE_TYPE, NumberComponent.DOUBLE_CODEC);
+		registry.unit(NumberComponent.NON_NEGATIVE_INT);
+		registry.unit(NumberComponent.POSITIVE_INT);
+		registry.unit(NumberComponent.NON_NEGATIVE_LONG);
+		registry.unit(NumberComponent.POSITIVE_LONG);
+		registry.unit(NumberComponent.NON_NEGATIVE_FLOAT);
+		registry.unit(NumberComponent.POSITIVE_FLOAT);
+		registry.unit(NumberComponent.NON_NEGATIVE_DOUBLE);
+		registry.unit(NumberComponent.POSITIVE_DOUBLE);
 
-		registry.register(ListRecipeComponent.TYPE);
-		registry.register(EnumComponent.TYPE);
-		registry.register(MapRecipeComponent.TYPE);
-		registry.register(MapRecipeComponent.PATTERN_TYPE);
-		registry.register(EitherRecipeComponent.TYPE);
-		registry.register(CustomObjectRecipeComponent.TYPE);
+		registry.register(ListRecipeComponent.TYPE, ListRecipeComponent.MAP_CODEC);
+		registry.register(EnumComponent.TYPE, EnumComponent.MAP_CODEC);
+		registry.register(MapRecipeComponent.TYPE, MapRecipeComponent.MAP_CODEC);
+		registry.register(MapRecipeComponent.PATTERN_TYPE, MapRecipeComponent.PATTERN_MAP_CODEC);
+		registry.register(EitherRecipeComponent.TYPE, EitherRecipeComponent.MAP_CODEC);
+		registry.register(CustomObjectRecipeComponent.TYPE, CustomObjectRecipeComponent.MAP_CODEC);
 
-		registry.register(IngredientComponent.INGREDIENT);
-		registry.register(IngredientComponent.OPTIONAL_INGREDIENT);
+		registry.unit(IngredientComponent.INGREDIENT);
+		registry.unit(IngredientComponent.OPTIONAL_INGREDIENT);
 
-		registry.register(SizedIngredientComponent.SIZED_INGREDIENT);
-		registry.register(SizedIngredientComponent.OPTIONAL_SIZED_INGREDIENT);
-		registry.register(SizedIngredientComponent.FLAT);
-		registry.register(SizedIngredientComponent.OPTIONAL_FLAT);
+		registry.unit(SizedIngredientComponent.SIZED_INGREDIENT);
+		registry.unit(SizedIngredientComponent.OPTIONAL_SIZED_INGREDIENT);
 
-		registry.register(ItemStackComponent.ITEM_STACK);
-		registry.register(ItemStackComponent.OPTIONAL_ITEM_STACK);
-		registry.register(ItemStackComponent.FILTERED_ITEM_STACK);
+		registry.unit(ItemStackComponent.ITEM_STACK);
+		registry.unit(ItemStackComponent.OPTIONAL_ITEM_STACK);
+		registry.register(ItemStackComponent.FILTERED_TYPE, ItemStackComponent.FILTERED_CODEC);
 
-		registry.register(FluidStackComponent.FLUID_STACK);
-		registry.register(FluidStackComponent.OPTIONAL_FLUID_STACK);
+		registry.unit(FluidStackComponent.FLUID_STACK);
+		registry.unit(FluidStackComponent.OPTIONAL_FLUID_STACK);
 
-		registry.register(FluidIngredientComponent.FLUID_INGREDIENT);
-		registry.register(FluidIngredientComponent.OPTIONAL_FLUID_INGREDIENT);
+		registry.unit(FluidIngredientComponent.FLUID_INGREDIENT);
+		registry.unit(FluidIngredientComponent.OPTIONAL_FLUID_INGREDIENT);
 
-		registry.register(SizedFluidIngredientComponent.FLAT);
-		registry.register(SizedFluidIngredientComponent.NESTED);
-		registry.register(SizedFluidIngredientComponent.OPTIONAL_FLAT);
-		registry.register(SizedFluidIngredientComponent.OPTIONAL_NESTED);
+		registry.unit(SizedFluidIngredientComponent.SIZED_FLUID_INGREDIENT);
+		registry.unit(SizedFluidIngredientComponent.OPTIONAL_SIZED_FLUID_INGREDIENT);
 
-		registry.register(BlockComponent.BLOCK);
-		registry.register(BlockComponent.OPTIONAL_BLOCK);
+		registry.unit(BlockComponent.BLOCK);
+		registry.unit(BlockComponent.OPTIONAL_BLOCK);
 
-		registry.register(BlockStateComponent.BLOCK);
-		registry.register(BlockStateComponent.BLOCK_STRING);
-		registry.register(BlockStateComponent.OPTIONAL_BLOCK);
-		registry.register(BlockStateComponent.OPTIONAL_BLOCK_STRING);
+		registry.unit(BlockStateComponent.BLOCK_STATE);
+		registry.unit(BlockStateComponent.BLOCK_STATE_STRING);
+		registry.unit(BlockStateComponent.OPTIONAL_BLOCK_STATE);
+		registry.unit(BlockStateComponent.OPTIONAL_BLOCK_STATE_STRING);
 
-		registry.register(TimeComponent.TICKS);
-		registry.register(TimeComponent.SECONDS);
-		registry.register(TimeComponent.MINUTES);
-		registry.register(TimeComponent.HOURS);
+		registry.unit(TimeComponent.TICKS);
+		registry.unit(TimeComponent.SECONDS);
+		registry.unit(TimeComponent.MINUTES);
+		registry.unit(TimeComponent.HOURS);
 
-		registry.register(TagKeyComponent.BLOCK);
-		registry.register(TagKeyComponent.ITEM);
-		registry.register(TagKeyComponent.FLUID);
-		registry.register(TagKeyComponent.ENTITY_TYPE);
-		registry.register(TagKeyComponent.BIOME);
-		registry.register(TagKeyComponent.HASHED_BLOCK);
-		registry.register(TagKeyComponent.HASHED_ITEM);
-		registry.register(TagKeyComponent.HASHED_FLUID);
-		registry.register(TagKeyComponent.HASHED_ENTITY_TYPE);
-		registry.register(TagKeyComponent.HASHED_BIOME);
+		registry.unit(TagKeyComponent.BLOCK);
+		registry.unit(TagKeyComponent.ITEM);
+		registry.unit(TagKeyComponent.FLUID);
+		registry.unit(TagKeyComponent.ENTITY_TYPE);
+		registry.unit(TagKeyComponent.BIOME);
+		registry.unit(TagKeyComponent.HASHED_BLOCK);
+		registry.unit(TagKeyComponent.HASHED_ITEM);
+		registry.unit(TagKeyComponent.HASHED_FLUID);
+		registry.unit(TagKeyComponent.HASHED_ENTITY_TYPE);
+		registry.unit(TagKeyComponent.HASHED_BIOME);
 
-		registry.register(NestedRecipeComponent.RECIPE);
+		registry.unit(NestedRecipeComponent.RECIPE);
 
-		registry.register(BookCategoryComponent.CRAFTING_BOOK_CATEGORY);
-		registry.register(BookCategoryComponent.COOKING_BOOK_CATEGORY);
+		registry.unit(BookCategoryComponent.CRAFTING_BOOK_CATEGORY);
+		registry.unit(BookCategoryComponent.COOKING_BOOK_CATEGORY);
 
-		registry.register(ResourceKeyComponent.DIMENSION);
-		registry.register(ResourceKeyComponent.LOOT_TABLE);
+		registry.unit(ResourceKeyComponent.DIMENSION);
+		registry.unit(ResourceKeyComponent.LOOT_TABLE);
 
-		registry.register(TagKeyComponent.TYPE);
-		registry.register(RegistryComponent.TYPE);
-		registry.register(ResourceKeyComponent.TYPE);
+		registry.register(TagKeyComponent.TYPE, TagKeyComponent.MAP_CODEC);
+		registry.register(RegistryComponent.TYPE, RegistryComponent.MAP_CODEC);
+		registry.register(ResourceKeyComponent.TYPE, ResourceKeyComponent.MAP_CODEC);
 	}
 
 	@Override
@@ -703,14 +709,6 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 	}
 
 	@Override
-	public void registerBlockEntityAttachments(BlockEntityAttachmentRegistry registry) {
-		registry.register(CustomCapabilityAttachment.TYPE);
-		registry.register(InventoryAttachment.TYPE);
-		registry.register(FluidTankAttachment.TYPE);
-		registry.register(EnergyStorageAttachment.TYPE);
-	}
-
-	@Override
 	public void registerIngredientActionTypes(IngredientActionTypeRegistry registry) {
 		registry.register(ConsumeAction.TYPE);
 		registry.register(CustomIngredientAction.TYPE);
@@ -720,11 +718,7 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 	}
 
 	@Override
-	@SuppressWarnings("deprecation")
-	public void clearCaches() {
-		ItemWrapper.CACHED_ITEM_MAP.forget();
-		ItemWrapper.CACHED_ITEM_LIST.forget();
-		ItemWrapper.CACHED_ITEM_TYPE_LIST.forget();
+	public void beforeScriptsLoaded(ScriptManager manager) {
 	}
 
 	@Override
@@ -794,28 +788,27 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 
 			if (song != null) {
 				registry.register(item, (registries, stack) -> {
-					var key = Util.makeDescriptionId("jukebox_song", song.song().key().location());
+					var key = Util.makeDescriptionId("jukebox_song", song.song().getKey().identifier());
 					return Component.empty().append(stack.getHoverName()).append(": ").append(Component.translatable(key));
 				});
 			}
 		}
 
 		registry.register(Items.PAINTING, (registries, stack) -> {
-			var customData = stack.getOrDefault(DataComponents.ENTITY_DATA, CustomData.EMPTY);
-
-			if (!customData.isEmpty()) {
-				var key = customData.read(registries.createSerializationContext(NbtOps.INSTANCE), Painting.VARIANT_MAP_CODEC)
-					.result()
-					.flatMap(Holder::unwrapKey)
-					.map(ResourceKey::location)
-					.orElse(null);
-
-				if (key != null) {
-					return Component.empty().append(stack.getHoverName()).append(": ").append(Component.translatable(key.toLanguageKey("painting", "author"))).append(" - ").append(Component.translatable(key.toLanguageKey("painting", "title")));
-				}
+			var variant = stack.get(DataComponents.PAINTING_VARIANT);
+			if (variant == null) {
+				return null;
 			}
-
-			return null;
+			var key = variant.unwrapKey().map(ResourceKey::identifier).orElse(null);
+			if (key == null) {
+				return null;
+			}
+			return Component.empty()
+				.append(stack.getHoverName())
+				.append(": ")
+				.append(Component.translatable(key.toLanguageKey("painting", "author")))
+				.append(" - ")
+				.append(Component.translatable(key.toLanguageKey("painting", "title")));
 		});
 	}
 
@@ -828,14 +821,6 @@ public class BuiltinKubeJSPlugin implements KubeJSPlugin {
 
 	@Override
 	public void generateData(KubeDataGenerator generator) {
-		if (ServerEvents.COMPOSTABLE_RECIPES.hasListeners()) {
-			generator.dataMap(NeoForgeDataMaps.COMPOSTABLES,
-				map -> {
-					var event = new CompostableRecipesKubeEvent(map);
-					ServerEvents.COMPOSTABLE_RECIPES.post(ScriptType.SERVER, event);
-				});
-		}
-
 		generator.dataMap(NeoForgeDataMaps.FURNACE_FUELS, callback -> {
 			for (var entry : ItemModificationKubeEvent.ItemModifications.BURN_TIME_OVERRIDES.reference2IntEntrySet()) {
 				callback.accept(entry.getKey().kjs$getIdLocation(), new FurnaceFuel(entry.getIntValue()));

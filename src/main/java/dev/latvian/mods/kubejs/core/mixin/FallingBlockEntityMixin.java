@@ -24,7 +24,7 @@ public class FallingBlockEntityMixin {
 	private BlockState blockState;
 
 	@Inject(method = "fall", cancellable = true, at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z", shift = At.Shift.BEFORE))
-	private static void kjs$fallStart(Level level, BlockPos pos, BlockState state, CallbackInfoReturnable<FallingBlockEntity> cir, @Local FallingBlockEntity entity) {
+	private static void kjs$fallStart(Level level, BlockPos pos, BlockState state, CallbackInfoReturnable<FallingBlockEntity> cir, @Local(name = "entity") FallingBlockEntity entity) {
 		if (!level.isClientSide() && BlockEvents.STARTED_FALLING.hasListeners(state.kjs$getKey())) {
 			if (BlockEvents.STARTED_FALLING.post(ScriptType.SERVER, state.kjs$getKey(), new BlockStartedFallingKubeEvent(level, pos, state, entity)).interruptFalse()) {
 				cir.setReturnValue(entity);
@@ -32,12 +32,26 @@ public class FallingBlockEntityMixin {
 		}
 	}
 
-	@Inject(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ChunkMap;broadcast(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/network/protocol/Packet;)V", shift = At.Shift.BEFORE))
-	private void kjs$fallEnd(CallbackInfo ci, @Local BlockPos pos, @Local double fallSpeed, @Local BlockState replacedState) {
-		var entity = (FallingBlockEntity) (Object) this;
+	@Unique
+	private double kjs$lastFallSpeed;
 
+	@Inject(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/item/FallingBlockEntity;applyGravity()V", shift = At.Shift.BEFORE))
+	private void kjs$captureFallSpeed(CallbackInfo ci) {
+		kjs$lastFallSpeed = Math.abs(((FallingBlockEntity) (Object) this).getDeltaMovement().y());
+	}
+
+	@Inject(
+		method = "tick",
+		at = @At(
+			value = "INVOKE",
+			target = "Lnet/minecraft/server/level/ChunkMap;sendToTrackingPlayers(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/network/protocol/Packet;)V",
+			shift = At.Shift.BEFORE
+		)
+	)
+	private void kjs$fallEnd(CallbackInfo ci, @Local(name = "pos") BlockPos pos, @Local(name = "currentState") BlockState replacedState) {
+		var entity = (FallingBlockEntity) (Object) this;
 		if (!entity.level().isClientSide() && BlockEvents.STOPPED_FALLING.hasListeners(blockState.kjs$getKey())) {
-			BlockEvents.STOPPED_FALLING.post(ScriptType.SERVER, blockState.kjs$getKey(), new BlockStoppedFallingKubeEvent(entity.level(), pos, blockState, entity, fallSpeed, replacedState));
+			BlockEvents.STOPPED_FALLING.post(ScriptType.SERVER, blockState.kjs$getKey(), new BlockStoppedFallingKubeEvent(entity.level(), pos, blockState, entity, kjs$lastFallSpeed, replacedState));
 		}
 	}
 

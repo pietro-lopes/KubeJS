@@ -7,8 +7,8 @@ import dev.latvian.mods.kubejs.block.callback.BlockStateModifyCallback;
 import dev.latvian.mods.kubejs.block.callback.BlockStateModifyPlacementCallback;
 import dev.latvian.mods.kubejs.block.callback.BlockStateRotateCallback;
 import dev.latvian.mods.kubejs.block.callback.CanBeReplacedCallback;
-import dev.latvian.mods.kubejs.block.callback.EntityFallenOnBlockCallback;
 import dev.latvian.mods.kubejs.block.callback.EntityBlockCallback;
+import dev.latvian.mods.kubejs.block.callback.EntityFallenOnBlockCallback;
 import dev.latvian.mods.kubejs.block.callback.RandomTickCallback;
 import dev.latvian.mods.kubejs.block.drop.BlockDropSupplier;
 import dev.latvian.mods.kubejs.block.drop.BlockDrops;
@@ -24,7 +24,6 @@ import dev.latvian.mods.kubejs.plugin.builtin.wrapper.AABBWrapper;
 import dev.latvian.mods.kubejs.registry.AdditionalObjectRegistry;
 import dev.latvian.mods.kubejs.registry.BuilderBase;
 import dev.latvian.mods.kubejs.registry.ModelledBuilderBase;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.typings.Info;
 import dev.latvian.mods.kubejs.util.Cast;
@@ -32,9 +31,11 @@ import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.rhino.util.HideFromJS;
 import dev.latvian.mods.rhino.util.ReturnsSelf;
 import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -54,8 +55,7 @@ import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -71,9 +71,9 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 	private static final BlockBehaviour.StatePredicate ALWAYS_FALSE_STATE_PREDICATE = (blockState, blockGetter, blockPos) -> false;
 	private static final BlockBehaviour.StateArgumentPredicate<?> ALWAYS_FALSE_STATE_ARG_PREDICATE = (blockState, blockGetter, blockPos, type) -> false;
 
-	public transient Block copyPropertiesFrom;
-	public transient SoundType soundType;
-	public transient Function<BlockState, MapColor> mapColorFn;
+	public transient @Nullable Block copyPropertiesFrom;
+	public transient @Nullable SoundType soundType;
+	public transient @Nullable Function<BlockState, MapColor> mapColorFn;
 	public transient float hardness;
 	public transient float resistance;
 	public transient float lightLevel;
@@ -81,37 +81,37 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 	public transient boolean fullBlock;
 	public transient boolean requiresTool;
 	public transient BlockRenderType renderType;
-	public transient BlockTintFunction tint;
-	public transient ItemBuilder itemBuilder;
+	public transient @Nullable BlockTintFunction tint;
+	public transient @Nullable ItemBuilder itemBuilder;
 	public transient List<AABB> customShape;
 	public transient boolean noCollision;
 	public transient boolean notSolid;
 	public transient float slipperiness = Float.NaN;
 	public transient float speedFactor = Float.NaN;
 	public transient float jumpFactor = Float.NaN;
-	public Consumer<RandomTickCallback> randomTickCallback;
-	public BlockDropSupplier drops;
+	public @Nullable Consumer<RandomTickCallback> randomTickCallback;
+	public @Nullable BlockDropSupplier drops;
 	public transient boolean noValidSpawns;
 	public transient boolean suffocating;
 	public transient boolean viewBlocking;
 	public transient boolean redstoneConductor;
 	public transient boolean transparent;
-	public transient NoteBlockInstrument instrument;
+	public transient @Nullable NoteBlockInstrument instrument;
 	public transient Set<Property<?>> blockStateProperties;
-	public transient Consumer<BlockStateModifyCallback> defaultStateModification;
-	public transient Consumer<BlockStateModifyPlacementCallback> placementStateModification;
-	public transient Predicate<CanBeReplacedCallback> canBeReplacedFunction;
-	public transient Consumer<EntityBlockCallback> insideCallback;
-	public transient Consumer<EntityBlockCallback> stepOnCallback;
-	public transient Consumer<EntityFallenOnBlockCallback> fallOnCallback;
-	public transient Consumer<AfterEntityFallenOnBlockCallback> afterFallenOnCallback;
-	public transient Consumer<BlockExplodedCallback> explodedCallback;
-	public transient Consumer<BlockStateRotateCallback> rotateStateModification;
-	public transient Consumer<BlockStateMirrorCallback> mirrorStateModification;
-	public transient Consumer<BlockRightClickedKubeEvent> rightClick;
-	public transient BlockEntityInfo blockEntityInfo;
+	public transient @Nullable Consumer<BlockStateModifyCallback> defaultStateModification;
+	public transient @Nullable Consumer<BlockStateModifyPlacementCallback> placementStateModification;
+	public transient @Nullable Predicate<CanBeReplacedCallback> canBeReplacedFunction;
+	public transient @Nullable Consumer<EntityBlockCallback> insideCallback;
+	public transient @Nullable Consumer<EntityBlockCallback> stepOnCallback;
+	public transient @Nullable Consumer<EntityFallenOnBlockCallback> fallOnCallback;
+	public transient @Nullable Consumer<AfterEntityFallenOnBlockCallback> afterFallenOnCallback;
+	public transient @Nullable Consumer<BlockExplodedCallback> explodedCallback;
+	public transient @Nullable Consumer<BlockStateRotateCallback> rotateStateModification;
+	public transient @Nullable Consumer<BlockStateMirrorCallback> mirrorStateModification;
+	public transient @Nullable Consumer<BlockRightClickedKubeEvent> rightClick;
+	public transient @Nullable BlockEntityInfo blockEntityInfo;
 
-	public BlockBuilder(ResourceLocation id) {
+	public BlockBuilder(Identifier id) {
 		super(id);
 		this.baseTexture = id.withPath(ID.BLOCK).toString();
 
@@ -125,10 +125,6 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 		this.requiresTool = false;
 		this.renderType = BlockRenderType.SOLID;
 		this.itemBuilder = getOrCreateItemBuilder();
-
-		if (itemBuilder instanceof BlockItemBuilder b) {
-			b.blockBuilder = this;
-		}
 
 		this.customShape = new ArrayList<>();
 		this.noCollision = false;
@@ -182,23 +178,19 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 		var table = generateLootTable(generator);
 
 		if (table != null) {
-			generator.json(id.withPath(ID.BLOCK_LOOT_TABLE), generator.getRegistries().json().withEncoder(LootTable.CODEC).apply(new Holder.Direct<>(table)).getOrThrow());
+			generator.json(id.withPath(ID.BLOCK_LOOT_TABLE), generator.getRegistries().json().withEncoder(LootTable.CODEC).apply(Holder.direct(table)).getOrThrow());
 		}
 	}
 
-	/**
-	 * @deprecated Use the version with additional datagen parameter (used for registry access etc.)
-	 */
-	@Deprecated(forRemoval = true)
-	@ApiStatus.NonExtendable
-	public LootTable generateLootTable() {
+	@Nullable
+	public LootTable generateLootTable(KubeDataGenerator generator) {
 		if (drops == BlockDropSupplier.NO_DROPS) {
 			return null;
 		}
 
-		var blockDrops = drops == null ? BlockDrops.createDefault(get().asItem().getDefaultInstance()) : drops.get();
+		var blockDrops = drops == null ? BlockDrops.createDefault(get().asItem()) : drops.get();
 
-		if (blockDrops.items().length == 0) {
+		if (blockDrops.items().length == 0 && blockDrops.defaultItem() == null) {
 			return null;
 		}
 
@@ -209,6 +201,10 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 		}
 
 		pool.when(ExplosionCondition.survivesExplosion());
+
+		if (blockDrops.defaultItem() != null) {
+			pool.add(LootItem.lootTableItem(blockDrops.defaultItem()));
+		}
 
 		for (var drop : blockDrops.items()) {
 			var item = LootItem.lootTableItem(drop.getItem());
@@ -225,11 +221,6 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 		}
 
 		return new LootTable.Builder().withPool(pool).build();
-	}
-
-	@Nullable
-	public LootTable generateLootTable(KubeDataGenerator generator) {
-		return generateLootTable();
 	}
 
 	@Override
@@ -283,6 +274,13 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 					});
 				}
 			}
+			if (renderType != BlockRenderType.SOLID) {
+				m.custom(json -> json.addProperty("render_type", switch (renderType) {
+					case CUTOUT -> "cutout";
+					case TRANSLUCENT -> "translucent";
+					default -> "solid";
+				}));
+			}
 		});
 	}
 
@@ -307,11 +305,11 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 	}
 
 	@Info("Sets the block's sound type. Defaults to wood.")
-	public BlockBuilder soundType(SoundType m) {
+	public BlockBuilder soundType(@Nullable SoundType m) {
 		if (m == null || m == SoundType.EMPTY) {
 			soundType = SoundType.EMPTY;
-			ConsoleJS.STARTUP.error("Invalid sound type!");
-			ConsoleJS.STARTUP.warn("Valid sound types: " + SoundTypeWrapper.INSTANCE.getMap().keySet());
+			ScriptType.STARTUP.console.error("Invalid sound type!");
+			ScriptType.STARTUP.console.warn("Valid sound types: " + SoundTypeWrapper.INSTANCE.getMap().keySet());
 			return this;
 		}
 
@@ -419,7 +417,7 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 	}
 
 	@Info("""
-		Sets the render type of the block. Can be `cutout`, `cutout_mipped`, `translucent`, or `basic`.
+		Sets the render type of the block. Can be `solid`, `cutout`, or `translucent`.
 		""")
 	public BlockBuilder renderType(BlockRenderType l) {
 		renderType = l;
@@ -457,10 +455,6 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 			if (itemBuilder == null) {
 				itemBuilder = getOrCreateItemBuilder();
 
-				if (itemBuilder instanceof BlockItemBuilder b) {
-					b.blockBuilder = this;
-				}
-
 				ScriptType.STARTUP.console.warn("`item` is called with non-null builder callback after block item is set to null! Creating another block item as fallback.");
 			}
 			i.accept(itemBuilder);
@@ -471,7 +465,7 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 
 	@HideFromJS
 	protected ItemBuilder getOrCreateItemBuilder() {
-		return itemBuilder == null ? (itemBuilder = new BlockItemBuilder(id)) : itemBuilder;
+		return itemBuilder == null ? (itemBuilder = new BlockItemBuilder(this, id)) : itemBuilder;
 	}
 
 	@Info("""
@@ -523,21 +517,6 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 		return this;
 	}
 
-	@Deprecated(forRemoval = true)
-	public BlockBuilder setWaterlogged(boolean waterlogged) {
-		ScriptType.STARTUP.console.warn("\"BlockBuilder.waterlogged\" is a deprecated property! Please use \"BlockBuilder.property(BlockProperties.WATERLOGGED)\" instead.");
-		if (waterlogged) {
-			property(BlockStateProperties.WATERLOGGED);
-		}
-		return this;
-	}
-
-	@Deprecated(forRemoval = true)
-	public boolean getWaterlogged() {
-		ScriptType.STARTUP.console.warn("\"BlockBuilder.waterlogged\" is a deprecated property! Please use \"BlockBuilder.property(BlockProperties.WATERLOGGED)\" instead.");
-		return canBeWaterlogged();
-	}
-
 	@Info("Makes the block can be waterlogged.")
 	public BlockBuilder waterlogged() {
 		return property(BlockStateProperties.WATERLOGGED);
@@ -549,7 +528,7 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 	}
 
 	@Info("Change drops of this block")
-	public BlockBuilder drops(BlockDropSupplier drops) {
+	public BlockBuilder drops(@Nullable BlockDropSupplier drops) {
 		this.drops = drops == null ? BlockDropSupplier.NO_DROPS : drops;
 		return this;
 	}
@@ -584,11 +563,9 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 		return this;
 	}
 
-	/**
-	 * Sets random tick callback for this black.
-	 *
-	 * @param randomTickCallback A callback using a block container and a random.
-	 */
+	/// Sets random tick callback for this black.
+	///
+	/// @param randomTickCallback A callback using a block container and a random.
 	@Info("Sets random tick callback for this black.")
 	public BlockBuilder randomTick(@Nullable Consumer<RandomTickCallback> randomTickCallback) {
 		this.randomTickCallback = randomTickCallback;
@@ -643,25 +620,26 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 
 	@Override
 	@Info("Tags both the block and the item with the given tag.")
-	public BlockBuilder tag(ResourceLocation[] tag) {
+	public BlockBuilder tag(Identifier[] tag) {
 		return tagBoth(tag);
 	}
 
 	@Info("Tags both the block and the item with the given tag.")
-	public BlockBuilder tagBoth(ResourceLocation[] tag) {
+	public BlockBuilder tagBoth(Identifier[] tag) {
 		tagBlock(tag);
 		tagItem(tag);
 		return this;
 	}
 
 	@Info("Tags the block with the given tag.")
-	public BlockBuilder tagBlock(ResourceLocation[] tag) {
+	public BlockBuilder tagBlock(Identifier[] tag) {
 		super.tag(tag);
 		return this;
 	}
 
 	@Info("Tags the item with the given tag.")
-	public BlockBuilder tagItem(ResourceLocation[] tag) {
+	public BlockBuilder tagItem(Identifier[] tag) {
+		assert itemBuilder != null;
 		itemBuilder.tag(tag);
 		return this;
 	}
@@ -773,6 +751,8 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 	public Block.Properties createProperties() {
 		var properties = new KubeJSBlockProperties(this, copyPropertiesFrom);
 
+		properties.setId(ResourceKey.create(BuiltInRegistries.BLOCK.key(), this.id));
+
 		if (soundType != null) {
 			properties.sound(soundType);
 		}
@@ -792,7 +772,7 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 		}
 
 		if (noCollision) {
-			properties.noCollission();
+			properties.noCollision();
 		}
 
 		if (notSolid) {
@@ -842,7 +822,6 @@ public abstract class BlockBuilder extends ModelledBuilderBase<Block> {
 		if (instrument != null) {
 			properties.instrument(instrument);
 		}
-
 		return properties;
 	}
 }

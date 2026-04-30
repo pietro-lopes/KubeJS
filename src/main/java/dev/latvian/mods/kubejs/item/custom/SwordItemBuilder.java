@@ -1,26 +1,32 @@
 package dev.latvian.mods.kubejs.item.custom;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.SwordItem;
+import net.minecraft.world.item.component.Weapon;
 
 public class SwordItemBuilder extends HandheldItemBuilder {
-	public static final ResourceLocation[] SWORD_TAGS = {
-		ItemTags.SWORDS.location(),
+	public static final Identifier[] SWORD_TAGS = {
+		ItemTags.SWORDS.location()
 	};
 
-	public static final ResourceLocation SWORD_MODEL = ResourceLocation.withDefaultNamespace("item/iron_sword");
+	public static final Identifier SWORD_MODEL = Identifier.withDefaultNamespace("item/iron_sword");
 
-	public SwordItemBuilder(ResourceLocation i) {
+	public SwordItemBuilder(Identifier i) {
 		super(i, 3F, -2.4F);
 		parentModel = SWORD_MODEL;
 		tag(SWORD_TAGS);
 	}
 
+
 	@Override
 	public Item createObject() {
-		itemAttributeModifiers = SwordItem.createAttributes(toolTier, attackDamageBaseline, speedBaseline);
-		return new SwordItem(toolTier, createItemProperties());
+		var props = createItemProperties();
+		var material = toolTier.build();
+		itemAttributeModifiers = createToolAttributes(material, attackDamageBaseline, speedBaseline);
+		return new Item(props
+			.component(DataComponents.WEAPON, new Weapon((int) attackDamageBaseline, disableBlockingForSeconds))
+		);
 	}
 }

@@ -1,6 +1,7 @@
 package dev.latvian.mods.kubejs;
 
 import com.google.common.base.Stopwatch;
+import dev.latvian.mods.kubejs.block.entity.KubeJSAttachmentTypes;
 import dev.latvian.mods.kubejs.client.ClientScriptManager;
 import dev.latvian.mods.kubejs.event.KubeStartupEvent;
 import dev.latvian.mods.kubejs.fluid.KubeJSFluidIngredients;
@@ -14,13 +15,14 @@ import dev.latvian.mods.kubejs.plugin.KubeJSPlugins;
 import dev.latvian.mods.kubejs.plugin.builtin.event.StartupEvents;
 import dev.latvian.mods.kubejs.recipe.KubeJSRecipeSerializers;
 import dev.latvian.mods.kubejs.registry.RegistryType;
+import dev.latvian.mods.kubejs.script.ConsoleJS;
 import dev.latvian.mods.kubejs.script.KubeJSBackgroundThread;
 import dev.latvian.mods.kubejs.script.PlatformWrapper;
 import dev.latvian.mods.kubejs.script.ScriptManager;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.script.data.KubeFileResourcePack;
 import dev.latvian.mods.kubejs.util.RecordDefaults;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -29,6 +31,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForgeMod;
 import net.neoforged.neoforgespi.language.IModFileInfo;
 import net.neoforged.neoforgespi.language.IModInfo;
+import org.jspecify.annotations.NullUnmarked;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,18 +41,19 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 
 @Mod(KubeJS.MOD_ID)
+@NullUnmarked
 public class KubeJS {
 	public static final String MOD_ID = "kubejs";
 	public static final String MOD_NAME = "KubeJS";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_NAME);
-	public static final int MC_VERSION_NUMBER = 2101;
-	public static final String MC_VERSION_STRING = "1.21.1";
+	public static final int MC_VERSION_NUMBER = 2601;
+	public static final String MC_VERSION_STRING = "26.1";
 	public static String QUERY;
 	public static String VERSION = "0";
 	public static String DISPLAY_NAME = "KubeJS";
 
-	public static ResourceLocation id(String path) {
-		return ResourceLocation.fromNamespaceAndPath(MOD_ID, path);
+	public static Identifier id(String path) {
+		return Identifier.fromNamespaceAndPath(MOD_ID, path);
 	}
 
 	public static IEventBus modEventBus;
@@ -122,9 +126,9 @@ public class KubeJS {
 		KubeJSPlugins.load(allMods, dist == Dist.CLIENT);
 		LOGGER.info("Done in {}", pluginTimer.stop());
 
-		KubeJSPlugins.forEachPlugin(KubeJSPlugin::init);
-
 		startupScriptManager = new StartupScriptManager();
+
+		KubeJSPlugins.forEachPlugin(KubeJSPlugin::init);
 
 		if (!datagen) {
 			startupScriptManager.reload();
@@ -159,8 +163,9 @@ public class KubeJS {
 
 		KubeJSCreativeTabs.REGISTRY.register(bus);
 		KubeJSRuleTests.REGISTRY.register(bus);
+		KubeJSAttachmentTypes.REGISTRY.register(bus);
 
 		StartupEvents.INIT.post(ScriptType.STARTUP, KubeStartupEvent.BASIC);
-		// KubeJSRegistries.chunkGenerators().register(new ResourceLocation(KubeJS.MOD_ID, "flat"), () -> KJSFlatLevelSource.CODEC);
+		// KubeJSRegistries.chunkGenerators().register(new Identifier(KubeJS.MOD_ID, "flat"), () -> KJSFlatLevelSource.CODEC);
 	}
 }

@@ -9,57 +9,66 @@ import dev.latvian.mods.rhino.type.TypeInfo;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.crafting.Ingredient;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.stream.Stream;
 
+// TODO: Rework to fit ingredient changes
 @RemapPrefixForJS("kjs$")
 public interface ItemPredicate extends Predicate<ItemStack>, IngredientSupplierKJS {
 	TypeInfo TYPE_INFO = TypeInfo.of(ItemPredicate.class);
 	ItemPredicate NONE = stack -> false;
 	ItemPredicate ALL = stack -> true;
 
-	@Override
-	boolean test(ItemStack itemStack);
+	static ItemPredicate wrap(Context cx, @Nullable Object from) {
+		if (from == null) {
+			return NONE;
+		} else if (from instanceof BaseFunction func) {
+			return (ItemPredicate) cx.createInterfaceAdapter(TYPE_INFO, func);
+		} else {
+			if (from instanceof CharSequence s) {
+				if (s.equals("*")) {
+					return ALL;
+				} else if (s.isEmpty() || s.equals("-")) {
+					return NONE;
+				}
+			}
 
-	private static ItemPredicate simplify(Ingredient in) {
-		return in.isEmpty() ? NONE : in.kjs$isWildcard() ? ALL : in;
-	}
+			var in = IngredientWrapper.wrap(cx, from);
 
-	static ItemPredicate wrap(Context cx, Object from) {
-		return switch (from) {
-			case null -> NONE;
-			case BaseFunction func -> (ItemPredicate) cx.createInterfaceAdapter(TYPE_INFO, func);
-			case String s -> switch (s) {
-				case "*" -> ALL;
-				case "", "-" -> NONE;
-				case String s1 when s1.isBlank() -> NONE;
-				default -> simplify(IngredientWrapper.wrap(cx, from));
-			};
-			default -> simplify(IngredientWrapper.wrap(cx, from));
-		};
+			return in.kjs$isWildcard() ? ALL : in;
+		}
 	}
 
 	default boolean kjs$testItem(Item item) {
 		return test(item.getDefaultInstance());
 	}
 
+	// TODO: remove or rework
+	@Deprecated(forRemoval = true)
 	default ItemStack[] kjs$getStackArray() {
-		return ItemWrapper.getList().stream().filter(this).toArray(ItemStack[]::new);
+		return ItemWrapper.getList().stream().map(ItemStackTemplate::create).filter(this).toArray(ItemStack[]::new);
 	}
 
+	// TODO: remove or rework
+	@Deprecated(forRemoval = true)
 	default ItemStackSet kjs$getStacks() {
 		return new ItemStackSet(kjs$getStackArray());
 	}
 
+	// TODO: remove or rework
+	// specifically this can VERY likely just be removed since we can use SlotDisplay instead?
+	@Deprecated(forRemoval = true)
 	default ItemStackSet kjs$getDisplayStacks() {
 		var set = new ItemStackSet();
 
-		for (var stack : ItemWrapper.getList()) {
+		for (var template : ItemWrapper.getList()) {
+			var stack = template.create();
 			if (test(stack)) {
 				set.add(stack);
 			}
@@ -70,10 +79,6 @@ public interface ItemPredicate extends Predicate<ItemStack>, IngredientSupplierK
 
 	default boolean kjs$isWildcard() {
 		return this == ALL;
-	}
-
-	default Stream<Item> kjs$getItemStream() {
-		return Arrays.stream(kjs$getStackArray()).map(ItemStack::getItem);
 	}
 
 	default Set<Item> kjs$getItemTypes() {
@@ -122,16 +127,14 @@ public interface ItemPredicate extends Predicate<ItemStack>, IngredientSupplierK
 		return ItemStack.EMPTY;
 	}
 
-	/**
-	 * Marks whether an ingredient is safe to be used to match recipe filters during the recipe event.
-	 * (The answer is usually no for non-Vanilla ingredients, but can be overridden manually by addons or downstream mods with integration.)
-	 */
+	/// Marks whether an ingredient is safe to be used to match recipe filters during the recipe event.
+	/// (The answer is usually no for non-Vanilla ingredients, but can be overridden manually by addons or downstream mods with integration.)
 	default boolean kjs$canBeUsedForMatching() {
 		return true;
 	}
 
 	@Override
 	default Ingredient kjs$asIngredient() {
-		return Ingredient.of(kjs$getStackArray());
+		return Ingredient.of(Arrays.stream(kjs$getStackArray()).map(ItemStack::getItem));
 	}
 }

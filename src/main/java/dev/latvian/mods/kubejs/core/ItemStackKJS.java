@@ -1,13 +1,10 @@
 package dev.latvian.mods.kubejs.core;
 
-import com.google.errorprone.annotations.DoNotCall;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DynamicOps;
 import dev.latvian.mods.kubejs.codec.KubeJSCodecs;
 import dev.latvian.mods.kubejs.component.DataComponentWrapper;
-import dev.latvian.mods.kubejs.component.ItemComponentFunctions;
-import dev.latvian.mods.kubejs.component.MutableDataComponentHolderFunctions;
-import dev.latvian.mods.kubejs.error.KubeRuntimeException;
+import dev.latvian.mods.kubejs.core.component.ItemComponentFunctions;
 import dev.latvian.mods.kubejs.level.LevelBlock;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.IngredientWrapper;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.ItemWrapper;
@@ -15,7 +12,6 @@ import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.ItemMatch;
 import dev.latvian.mods.kubejs.recipe.match.Replaceable;
-import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.kubejs.util.RegistryAccessContainer;
@@ -35,8 +31,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -48,7 +44,7 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -62,7 +58,7 @@ public interface ItemStackKJS extends
 	ToStringJS,
 	Replaceable,
 	ItemComponentFunctions,
-	MutableDataComponentHolderFunctions,
+	MutableDataComponentHolderKJS,
 	ItemMatch,
 	RegistryObjectKJS<Item> {
 	default ItemStack kjs$self() {
@@ -70,10 +66,10 @@ public interface ItemStackKJS extends
 	}
 
 	@Override
-	default boolean specialEquals(Context cx, Object o, boolean shallow) {
+	default boolean specialEquals(Context cx, @Nullable Object o, boolean shallow) {
 		return switch (o) {
 			case CharSequence cs -> kjs$getId().equals(ID.string(cs.toString()));
-			case ResourceLocation id -> kjs$getIdLocation().equals(id);
+			case Identifier id -> kjs$getIdLocation().equals(id);
 			case ItemStack s -> kjs$equalsIgnoringCount(s);
 			case null, default -> KubeJSCodecs.filter(ItemWrapper.wrapResult(cx, o), this::kjs$equalsIgnoringCount);
 		};
@@ -102,7 +98,7 @@ public interface ItemStackKJS extends
 	}
 
 	@Override
-	default ResourceLocation kjs$getIdLocation() {
+	default Identifier kjs$getIdLocation() {
 		return kjs$self().getItem().kjs$getIdLocation();
 	}
 
@@ -176,7 +172,7 @@ public interface ItemStackKJS extends
 
 		EnchantmentHelper.updateEnchantments(is, mutable -> {
 			for (var entry : enchantments.entrySet()) {
-				mutable.upgrade(entry.getKey(), entry.getValue());
+				mutable.upgrade(entry.getKey(), entry.getIntValue());
 			}
 		});
 
@@ -212,12 +208,6 @@ public interface ItemStackKJS extends
 		return kjs$toItemString0(RegistryAccessContainer.of(cx).nbt());
 	}
 
-	@DoNotCall
-	@Deprecated
-	default ItemStack kjs$withChance(Context cx, float chance) {
-		throw new KubeRuntimeException(".withChance() is no longer supported on Minecraft 1.21! Please use the chance item implementation of the relevant mod addon (such as CreateItem.of(item, chance) for KubeJS Create) instead!").source(SourceLine.of(cx));
-	}
-
 	default String kjs$toItemString0(@Nullable DynamicOps<Tag> dynamicOps) {
 		var is = kjs$self();
 		var count = is.getCount();
@@ -247,19 +237,15 @@ public interface ItemStackKJS extends
 	@Override
 	default Ingredient kjs$asIngredient() {
 		var p = kjs$self().getComponentsPatch();
-
 		if (p.isEmpty()) {
-			return kjs$self().getItem().kjs$asIngredient();
+			return Ingredient.of(HolderSet.direct(kjs$asHolder()));
 		}
-
 		var map = DataComponentMap.builder();
-
 		for (var entry : p.entrySet()) {
 			if (entry.getValue().isPresent()) {
 				map.set(entry.getKey(), Cast.to(entry.getValue().get()));
 			}
 		}
-
 		return IngredientWrapper.withData(HolderSet.direct(kjs$asHolder()), map.build());
 	}
 

@@ -1,9 +1,11 @@
 package dev.latvian.mods.kubejs.block.entity;
 
+import com.mojang.serialization.Codec;
 import dev.latvian.mods.kubejs.level.LevelBlock;
 import dev.latvian.mods.kubejs.plugin.builtin.event.BlockEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -15,9 +17,12 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.state.BlockState;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -26,14 +31,17 @@ public class KubeBlockEntity extends BlockEntity {
 
 	public final BlockEntityInfo info;
 	public final ResourceKey<Block> blockKey;
-	protected LevelBlock block;
+	protected @Nullable LevelBlock block;
 	public final int x, y, z;
 	public int tick, cycle;
 	public CompoundTag data;
 	public final Map<String, Object> attachments;
-	public final transient BlockEntityAttachmentHolder[] attachmentArray;
-	public UUID placerId;
-	private BlockEntityTickKubeEvent tickEvent;
+	public final Map<String, EnergyStorageAttachment.Wrapped> energyWrappers;
+	public final Map<String, FluidTankAttachment.Wrapped> fluidWrappers;
+	public final Map<String, InventoryAttachment.Wrapped> inventoryWrappers;
+	public final Map<String, CustomCapabilityAttachment> customCapabilities;
+	public @Nullable UUID placerId;
+	private @Nullable BlockEntityTickKubeEvent tickEvent;
 	private boolean save;
 	private boolean sync;
 
@@ -46,21 +54,52 @@ public class KubeBlockEntity extends BlockEntity {
 		this.z = blockPos.getZ();
 		this.data = info.initialData.copy();
 
-		if (entityInfo.attachments != null) {
-			var map = new HashMap<String, Object>(entityInfo.attachments.size());
-			this.attachmentArray = new BlockEntityAttachmentHolder[entityInfo.attachments.size()];
+		var jsMap = new LinkedHashMap<String, Object>();
 
-			for (var aInfo : entityInfo.attachments.values()) {
-				var f = aInfo.factory().create(aInfo, this);
-				map.put(aInfo.id(), f.getWrappedObject());
-				this.attachmentArray[aInfo.index()] = new BlockEntityAttachmentHolder(aInfo, f);
+		if (!entityInfo.energyConfigs.isEmpty()) {
+			this.energyWrappers = new HashMap<>(entityInfo.energyConfigs.size());
+			for (var config : entityInfo.energyConfigs) {
+				var wrapped = new EnergyStorageAttachment.Wrapped(this, config);
+				energyWrappers.put(config.id(), wrapped);
+				jsMap.put(config.id(), wrapped);
 			}
-
-			this.attachments = Map.copyOf(map);
 		} else {
-			this.attachments = Map.of();
-			this.attachmentArray = BlockEntityAttachmentHolder.EMPTY_ARRAY;
+			this.energyWrappers = Map.of();
 		}
+
+		if (!entityInfo.fluidConfigs.isEmpty()) {
+			this.fluidWrappers = new HashMap<>(entityInfo.fluidConfigs.size());
+			for (var config : entityInfo.fluidConfigs) {
+				var wrapped = new FluidTankAttachment.Wrapped(this, config);
+				fluidWrappers.put(config.id(), wrapped);
+				jsMap.put(config.id(), wrapped);
+			}
+		} else {
+			this.fluidWrappers = Map.of();
+		}
+
+		if (!entityInfo.inventoryConfigs.isEmpty()) {
+			this.inventoryWrappers = new HashMap<>(entityInfo.inventoryConfigs.size());
+			for (var config : entityInfo.inventoryConfigs) {
+				var wrapped = new InventoryAttachment.Wrapped(this, config);
+				inventoryWrappers.put(config.id(), wrapped);
+				jsMap.put(config.id(), wrapped);
+			}
+		} else {
+			this.inventoryWrappers = Map.of();
+		}
+
+		if (!entityInfo.customCapConfigs.isEmpty()) {
+			this.customCapabilities = new HashMap<>(entityInfo.customCapConfigs.size());
+			for (var config : entityInfo.customCapConfigs) {
+				var entry = new CustomCapabilityAttachment(config.capability(), config.dataFactory().get());
+				customCapabilities.put(config.id(), entry);
+				jsMap.put(config.id(), entry.data());
+			}
+		} else {
+			this.customCapabilities = Map.of();
+		}
+		this.attachments = Map.copyOf(jsMap);
 	}
 
 	@Override
@@ -70,51 +109,48 @@ public class KubeBlockEntity extends BlockEntity {
 	}
 
 	@Override
-	protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
-		super.saveAdditional(tag, registries);
-		tag.put("data", data);
+	protected void saveAdditional(ValueOutput output) {
+		super.saveAdditional(output);
+
+		output.store("data", CompoundTag.CODEC, data);
 
 		if (tick > 0) {
-			tag.putInt("tick", tick);
+			output.putInt("tick", tick);
+		} else {
+			output.discard("tick");
 		}
 
 		if (cycle > 0) {
-			tag.putInt("cycle", cycle);
+			output.putInt("cycle", cycle);
+		} else {
+			output.discard("cycle");
 		}
 
-		if (placerId != null) {
-			tag.putUUID("placer", placerId);
-		}
+		output.storeNullable("placer", UUIDUtil.CODEC, placerId);
 
-		if (attachmentArray.length > 0) {
-			var data = new CompoundTag();
-
-			for (var entry : attachmentArray) {
-				var t = entry.attachment().serialize(registries);
-
-				if (t != null) {
-					data.put(entry.info().id(), t);
-				}
-			}
-
-			tag.put("attachments", data);
-		}
 	}
 
 	@Override
-	public void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
-		super.loadAdditional(tag, registries);
-		data = tag.getCompound("data");
-		tick = tag.getInt("tick");
-		cycle = tag.getInt("cycle");
-		placerId = tag.contains("placer") ? tag.getUUID("placer") : null;
+	protected void loadAdditional(ValueInput input) {
+		super.loadAdditional(input);
 
-		if (attachmentArray.length > 0) {
-			var data = tag.getCompound("attachments");
+		data = input.read("data", CompoundTag.CODEC).orElseGet(CompoundTag::new);
+		tick = input.read("tick", Codec.INT).orElse(0);
+		cycle = input.read("cycle", Codec.INT).orElse(0);
+		placerId = input.read("placer", UUIDUtil.CODEC).orElse(null);
 
-			for (var entry : attachmentArray) {
-				entry.attachment().deserialize(registries, data.get(entry.info().id()));
-			}
+		syncWrappersFromAttachments();
+	}
+
+	private void syncWrappersFromAttachments() {
+		for (var wrapper : energyWrappers.values()) {
+			wrapper.syncFromAttachment();
+		}
+		for (var wrapper : fluidWrappers.values()) {
+			wrapper.syncFromAttachment();
+		}
+		for (var wrapper : inventoryWrappers.values()) {
+			wrapper.syncFromAttachment();
 		}
 	}
 
@@ -195,7 +231,7 @@ public class KubeBlockEntity extends BlockEntity {
 			return;
 		}
 
-		if (level.isClientSide ? info.clientTicking : info.serverTicking) {
+		if (level.isClientSide() ? info.clientTicking : info.serverTicking) {
 			if (tick % info.tickFrequency == info.tickOffset) {
 				var side = level.kjs$getScriptType();
 
@@ -215,9 +251,9 @@ public class KubeBlockEntity extends BlockEntity {
 			tick++;
 		}
 
-		if (!level.isClientSide && info.attachmentsTicking) {
-			for (var entry : attachmentArray) {
-				entry.attachment().serverTick();
+		if (!level.isClientSide() && info.attachmentsTicking) {
+			for (var wrapper : energyWrappers.values()) {
+				wrapper.serverTick();
 			}
 		}
 

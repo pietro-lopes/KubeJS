@@ -5,18 +5,16 @@ import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
 import dev.latvian.mods.rhino.type.TypeInfo;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
-/**
- * A recipe component that may delegate most of its logic to a parent component.
- * A common example of using this would be to define a custom item output component
- * with different serialization or matching logic, but that can still use the same
- * base ItemOutput type as its parent.
- *
- * @param <T> The value type of this component
- */
+/// A recipe component that may delegate most of its logic to a parent component.
+/// A common example of using this would be to define a custom item output component
+/// with different serialization or matching logic, but that can still use the same
+/// base ItemOutput type as its parent.
+///
+/// @param <T> The value type of this component
 public interface RecipeComponentWithParent<T> extends RecipeComponent<T> {
 	RecipeComponent<T> parentComponent();
 
@@ -31,12 +29,12 @@ public interface RecipeComponentWithParent<T> extends RecipeComponent<T> {
 	}
 
 	@Override
-	default T wrap(RecipeScriptContext cx, Object from) {
+	default T wrap(RecipeScriptContext cx, @Nullable Object from) {
 		return parentComponent().wrap(cx, from);
 	}
 
 	@Override
-	default boolean hasPriority(RecipeMatchContext cx, Object from) {
+	default boolean hasPriority(RecipeMatchContext cx, @Nullable Object from) {
 		return parentComponent().hasPriority(cx, from);
 	}
 
@@ -68,12 +66,6 @@ public interface RecipeComponentWithParent<T> extends RecipeComponent<T> {
 	@Override
 	default void buildUniqueId(UniqueIdBuilder builder, T value) {
 		parentComponent().buildUniqueId(builder, value);
-	}
-
-	@Override
-	@Nullable
-	default RecipeComponentBuilder createBuilder() {
-		return parentComponent().createBuilder();
 	}
 
 	@Override

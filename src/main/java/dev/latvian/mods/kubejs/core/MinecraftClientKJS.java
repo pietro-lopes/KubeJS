@@ -7,7 +7,6 @@ import dev.latvian.mods.kubejs.item.ItemClickedKubeEvent;
 import dev.latvian.mods.kubejs.net.FirstClickPayload;
 import dev.latvian.mods.kubejs.plugin.builtin.event.ItemEvents;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.GLFWInputWrapper;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.typings.Info;
 import dev.latvian.mods.kubejs.typings.Param;
@@ -19,10 +18,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
-import net.neoforged.neoforge.network.PacketDistributor;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import org.jspecify.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Function;
@@ -66,7 +65,7 @@ public interface MinecraftClientKJS extends MinecraftEnvironmentKJS {
 	}
 
 	@Override
-	default void kjs$setActivePostShader(@Nullable ResourceLocation id) {
+	default void kjs$setActivePostShader(@Nullable Identifier id) {
 		kjs$self().player.kjs$setActivePostShader(id);
 	}
 
@@ -94,7 +93,7 @@ public interface MinecraftClientKJS extends MinecraftEnvironmentKJS {
 	}
 
 	default boolean kjs$isKeyDown(int key) {
-		return key != -1 && InputConstants.isKeyDown(kjs$self().getWindow().getWindow(), key);
+		return key != -1 && InputConstants.isKeyDown(kjs$self().getWindow(), key);
 	}
 
 	default boolean kjs$isKeyDown(String keyName) {
@@ -116,23 +115,11 @@ public interface MinecraftClientKJS extends MinecraftEnvironmentKJS {
 			if (key.getKey().getType() == InputConstants.Type.KEYSYM) {
 				return kjs$isKeyDown(key.getKey().getValue());
 			} else if (key.getKey().getType() == InputConstants.Type.MOUSE) {
-				return GLFW.glfwGetMouseButton(kjs$self().getWindow().getWindow(), key.getKey().getValue()) == GLFW.GLFW_TRUE;
+				return GLFW.glfwGetMouseButton(kjs$self().getWindow().handle(), key.getKey().getValue()) == GLFW.GLFW_TRUE;
 			}
 		}
 
 		return false;
-	}
-
-	default boolean kjs$isShiftDown() {
-		return Screen.hasShiftDown();
-	}
-
-	default boolean kjs$isCtrlDown() {
-		return Screen.hasControlDown();
-	}
-
-	default boolean kjs$isAltDown() {
-		return Screen.hasAltDown();
 	}
 
 	@HideFromJS
@@ -147,7 +134,7 @@ public interface MinecraftClientKJS extends MinecraftEnvironmentKJS {
 			}
 		}
 
-		PacketDistributor.sendToServer(new FirstClickPayload(0));
+		ClientPacketDistributor.sendToServer(new FirstClickPayload(0));
 	}
 
 	@HideFromJS
@@ -165,23 +152,23 @@ public interface MinecraftClientKJS extends MinecraftEnvironmentKJS {
 			}
 		}
 
-		PacketDistributor.sendToServer(new FirstClickPayload(1));
+		ClientPacketDistributor.sendToServer(new FirstClickPayload(1));
 	}
 
 	@HideFromJS
 	default void kjs$afterResourcesLoaded(boolean reload) {
 		if (reload) {
-			ConsoleJS.CLIENT.stopCapturingErrors();
+			ScriptType.CLIENT.console.stopCapturingErrors();
 		}
 
-		ConsoleJS.CLIENT.info("Client resource reload complete!");
+		ScriptType.CLIENT.console.info("Client resource reload complete!");
 	}
 
-	default Function<ResourceLocation, TextureAtlasSprite> kjs$getBlockTextureAtlas() {
-		return kjs$self().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS);
+	default Function<Identifier, TextureAtlasSprite> kjs$getBlockTextureAtlas() {
+		return (identifier) -> kjs$self().getAtlasManager().getAtlasOrThrow(TextureAtlas.LOCATION_BLOCKS).getSprite(identifier);
 	}
 
-	default Function<ResourceLocation, TextureAtlasSprite> kjs$getParticleTextureAtlas() {
-		return kjs$self().getTextureAtlas(TextureAtlas.LOCATION_PARTICLES);
+	default Function<Identifier, TextureAtlasSprite> kjs$getParticleTextureAtlas() {
+		return (identifier) -> kjs$self().getAtlasManager().getAtlasOrThrow(TextureAtlas.LOCATION_PARTICLES).getSprite(identifier);
 	}
 }

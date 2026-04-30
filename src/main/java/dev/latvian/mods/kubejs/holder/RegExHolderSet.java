@@ -10,33 +10,34 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.TagKey;
 import net.neoforged.neoforge.registries.holdersets.HolderSetType;
-import net.neoforged.neoforge.registries.holdersets.ICustomHolderSet;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
-public class RegExHolderSet<T> extends HolderSet.ListBacked<T> implements ICustomHolderSet<T> {
+public class RegExHolderSet<T> extends HolderSet.ListBacked<T> implements KubeJSHolderSet<T> {
 	public static <T> MapCodec<RegExHolderSet<T>> codec(ResourceKey<? extends Registry<T>> registryKey) {
 		return RecordCodecBuilder.mapCodec(instance -> instance.group(
-			RegistryOps.retrieveRegistryLookup(registryKey).forGetter(s -> s.registryLookup),
-			RegExpKJS.CODEC.fieldOf("pattern").forGetter(s -> s.pattern)
+			RegistryOps.retrieveRegistryLookup(registryKey).forGetter(RegExHolderSet::registryLookup),
+			RegExpKJS.CODEC.fieldOf("pattern").forGetter(RegExHolderSet::pattern)
 		).apply(instance, RegExHolderSet::new));
 	}
 
 	public static <T> StreamCodec<RegistryFriendlyByteBuf, RegExHolderSet<T>> streamCodec(ResourceKey<? extends Registry<T>> registryKey) {
-		return null;
+		return ByteBufCodecs.fromCodecWithRegistries(codec(registryKey).codec());
 	}
 
-	public final HolderLookup.RegistryLookup<T> registryLookup;
-	public final Pattern pattern;
+	private final HolderLookup.RegistryLookup<T> registryLookup;
+	private final Pattern pattern;
 
 	@Nullable
 	private Set<Holder<T>> set = null;
@@ -44,7 +45,7 @@ public class RegExHolderSet<T> extends HolderSet.ListBacked<T> implements ICusto
 	@Nullable
 	private List<Holder<T>> list = null;
 
-	private RegExHolderSet(HolderLookup.RegistryLookup<T> registryLookup, Pattern pattern) {
+	RegExHolderSet(HolderLookup.RegistryLookup<T> registryLookup, Pattern pattern) {
 		this.registryLookup = registryLookup;
 		this.pattern = pattern;
 	}
@@ -62,13 +63,26 @@ public class RegExHolderSet<T> extends HolderSet.ListBacked<T> implements ICusto
 		return KubeJSHolderSets.REGEX.value();
 	}
 
+	public HolderLookup.RegistryLookup<T> registryLookup() {
+		return registryLookup;
+	}
+
+	public Pattern pattern() {
+		return pattern;
+	}
+
 	@Override
 	protected List<Holder<T>> contents() {
 		if (list == null) {
-			list = List.copyOf(registryLookup.listElements().filter(ref -> pattern.matcher(ref.key().location().toString()).find()).toList());
+			list = List.copyOf(registryLookup.listElements().filter(ref -> pattern.matcher(ref.key().identifier().toString()).find()).toList());
 		}
 
 		return list;
+	}
+
+	@Override
+	public boolean isBound() {
+		return this.list != null;
 	}
 
 	@Override
@@ -93,5 +107,10 @@ public class RegExHolderSet<T> extends HolderSet.ListBacked<T> implements ICusto
 	@Override
 	public String toString() {
 		return "KubeJSRegExHolderSet[" + RegExpKJS.toRegExpString(pattern) + ']';
+	}
+
+	@Override
+	public String kjs$toIngredientString(Function<Holder<T>, String> elementCodec) {
+		return pattern.toString();
 	}
 }

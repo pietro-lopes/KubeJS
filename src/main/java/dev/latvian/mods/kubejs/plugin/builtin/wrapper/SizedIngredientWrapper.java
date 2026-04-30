@@ -1,5 +1,6 @@
 package dev.latvian.mods.kubejs.plugin.builtin.wrapper;
 
+import com.google.errorprone.annotations.DoNotCall;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.serialization.DataResult;
@@ -7,9 +8,11 @@ import dev.latvian.mods.kubejs.core.IngredientKJS;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.kubejs.typings.Info;
+import dev.latvian.mods.kubejs.util.RegistryAccessContainer;
 import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import dev.latvian.mods.rhino.util.HideFromJS;
+import net.minecraft.core.HolderSet;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
@@ -17,15 +20,25 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.ItemLike;
 import net.neoforged.neoforge.common.crafting.SizedIngredient;
+import org.jspecify.annotations.Nullable;
+
+import static dev.latvian.mods.kubejs.plugin.builtin.wrapper.IngredientWrapper.EMPTY_INGREDIENT;
 
 @Info("Various SizedIngredient related helper methods")
 public interface SizedIngredientWrapper {
 	TypeInfo TYPE_INFO = TypeInfo.of(SizedIngredient.class);
 
-	@Info("A completely empty ingredient that will only match air")
-	SizedIngredient empty = new SizedIngredient(Ingredient.EMPTY, 1);
+	@DoNotCall
+	@Deprecated(forRemoval = true)
+	@Info("Empty ingredients are no longer supported. Do not call!")
+	static Object getEmpty(Context cx) {
+		return EMPTY_INGREDIENT.getOrThrow(str -> new KubeRuntimeException(str).source(SourceLine.of(cx)));
+	}
+
 	@Info("An ingredient that matches everything")
-	SizedIngredient all = new SizedIngredient(IngredientWrapper.all, 1);
+	static SizedIngredient getAll(Context cx) {
+		return new SizedIngredient(IngredientWrapper.getAll(cx), 1);
+	}
 
 	@Info("Returns a sized ingredient of the input")
 	static SizedIngredient of(SizedIngredient ingredient) {
@@ -37,20 +50,21 @@ public interface SizedIngredientWrapper {
 		return new SizedIngredient(ingredient, count);
 	}
 
-	static SizedIngredient ofTag(TagKey<Item> tag, int count) {
-		return SizedIngredient.of(tag, count);
+	static SizedIngredient ofTag(Context cx, TagKey<Item> tag, int count) {
+		HolderSet<Item> set = RegistryAccessContainer.of(cx).getOrThrow(tag);
+		return new SizedIngredient(Ingredient.of(set), count);
 	}
 
 	@HideFromJS
-	private static SizedIngredient wrapTrivial(Context cx, Object from) {
+	@Nullable
+	private static SizedIngredient wrapTrivial(Context cx, @Nullable Object from) {
 		return switch (from) {
 			case SizedIngredient s -> s;
 			case Ingredient ingredient -> ingredient.kjs$asStack();
-			case ItemStack stack -> Ingredient.of(stack.kjs$withCount(1)).kjs$withCount(stack.getCount());
+			case ItemStack stack -> Ingredient.of(stack.getItem()).kjs$asStack().ingredient().kjs$withCount(stack.getCount());
 			case ItemLike item -> Ingredient.of(item).kjs$asStack();
 			case null, default -> null;
 		};
-
 	}
 
 	@HideFromJS

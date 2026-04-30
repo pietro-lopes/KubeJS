@@ -18,9 +18,11 @@ import dev.latvian.mods.rhino.util.HideFromJS;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundSetCarriedItemPacket;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.Permission;
+import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.players.UserBanListEntry;
 import net.minecraft.util.Mth;
 import net.minecraft.world.Container;
@@ -31,7 +33,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.world.level.storage.LevelData;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -93,7 +96,7 @@ public interface ServerPlayerKJS extends PlayerKJS {
 
 	@Info("Checks, whether the player is a server operator.")
 	default boolean kjs$isOp() {
-		return kjs$self().server.getPlayerList().isOp(kjs$self().getGameProfile());
+		return kjs$self().server.getPlayerList().isOp(kjs$self().nameAndId());
 	}
 
 	@Info(value = "Kicks the player from the server with the provided reason.", params = {
@@ -118,17 +121,17 @@ public interface ServerPlayerKJS extends PlayerKJS {
 		var start = Instant.now();
 		var end = start.plus(banDuration);
 
-		var userlistbansentry = new UserBanListEntry(kjs$self().getGameProfile(), Date.from(start), banner, Date.from(start.isBefore(end) ? end : start.plus(Duration.ofSeconds(TEN_YEARS_SECONDS))), reason);
+		var userlistbansentry = new UserBanListEntry(kjs$self().nameAndId(), Date.from(start), banner, Date.from(start.isBefore(end) ? end : start.plus(Duration.ofSeconds(TEN_YEARS_SECONDS))), reason);
 		kjs$self().server.getPlayerList().getBans().add(userlistbansentry);
 		kjs$kick(Component.translatable("multiplayer.disconnect.banned"));
 	}
 
-	default boolean kjs$isAdvancementDone(ResourceLocation id) {
+	default boolean kjs$isAdvancementDone(Identifier id) {
 		var a = kjs$self().server.kjs$getAdvancement(id);
 		return a != null && kjs$self().getAdvancements().getOrStartProgress(a.holder()).isDone();
 	}
 
-	default void kjs$unlockAdvancement(ResourceLocation id) {
+	default void kjs$unlockAdvancement(Identifier id) {
 		var a = kjs$self().server.kjs$getAdvancement(id);
 
 		if (a != null) {
@@ -140,7 +143,7 @@ public interface ServerPlayerKJS extends PlayerKJS {
 		}
 	}
 
-	default void kjs$revokeAdvancement(ResourceLocation id) {
+	default void kjs$revokeAdvancement(Identifier id) {
 		var a = kjs$self().server.kjs$getAdvancement(id);
 
 		if (a != null) {
@@ -161,9 +164,10 @@ public interface ServerPlayerKJS extends PlayerKJS {
 		var n = kjs$getSelectedSlot();
 
 		if (p != n && kjs$self().connection != null) {
-			kjs$self().connection.send(new ClientboundSetCarriedItemPacket(n));
+			kjs$self().connection.send(new ClientboundSetHeldSlotPacket(n));
 		}
 	}
+
 
 	@Override
 	default void kjs$setMouseItem(ItemStack item) {
@@ -174,14 +178,30 @@ public interface ServerPlayerKJS extends PlayerKJS {
 		}
 	}
 
+	default boolean kjs$hasPermission(int i) {
+		var permission = new Permission.HasCommandLevel(PermissionLevel.byId(i));
+		return kjs$self().permissions().hasPermission(permission);
+	}
+
 	@Nullable
 	default LevelBlock kjs$getSpawnLocation() {
-		var pos = kjs$self().getRespawnPosition();
+		var config = kjs$self().getRespawnConfig();
+		if (config == null) {
+			return null;
+		}
+		var pos = config.respawnData().pos();
 		return pos == null ? null : kjs$getLevel().kjs$getBlock(pos);
 	}
 
 	default void kjs$setSpawnLocation(LevelBlock c) {
-		kjs$self().setRespawnPosition(c.getDimensionKey(), c.getPos(), 0F, true, false);
+		var level = c.getLevel();
+		var pos = c.getPos();
+		var yaw = 0F;
+		var pitch = 0F;
+		var forced = false;
+
+		var respawn = new ServerPlayer.RespawnConfig(LevelData.RespawnData.of(level.dimension(), pos, yaw, pitch), forced);
+		kjs$self().setRespawnPosition(respawn, false);
 	}
 
 	@Override
@@ -231,7 +251,7 @@ public interface ServerPlayerKJS extends PlayerKJS {
 	}
 
 	default Container kjs$captureInventory(boolean autoRestore) {
-		var playerItems = kjs$self().getInventory().items;
+		var playerItems = kjs$self().getInventory().getNonEquipmentItems();
 
 		var captured = new SimpleContainer(playerItems.size());
 		var map = new HashMap<Integer, ItemStack>();
@@ -249,7 +269,7 @@ public interface ServerPlayerKJS extends PlayerKJS {
 		}
 
 		if (autoRestore && !map.isEmpty()) {
-			kjs$self().getServer().kjs$restoreInventories().put(kjs$self().getUUID(), map);
+			kjs$self().server.kjs$restoreInventories().put(kjs$self().getUUID(), map);
 		}
 
 		return captured;
@@ -292,7 +312,7 @@ public interface ServerPlayerKJS extends PlayerKJS {
 	}
 
 	@Override
-	default void kjs$setActivePostShader(@Nullable ResourceLocation id) {
+	default void kjs$setActivePostShader(@Nullable Identifier id) {
 		KubeJSNet.safeSendToPlayer(kjs$self(), new SetActivePostShaderPayload(Optional.ofNullable(id)));
 	}
 }

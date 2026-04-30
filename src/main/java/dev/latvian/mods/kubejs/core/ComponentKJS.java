@@ -2,7 +2,6 @@ package dev.latvian.mods.kubejs.core;
 
 import com.google.common.collect.Iterators;
 import com.mojang.serialization.Codec;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.color.KubeColor;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.TextWrapper;
 import dev.latvian.mods.kubejs.util.WithCodec;
@@ -13,46 +12,40 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
+import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.resources.ResourceLocation;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.resources.Identifier;
+import org.jspecify.annotations.Nullable;
 
-import java.util.Iterator;
+import java.net.URI;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Consumer;
 
-/**
- * Extensions for components, will be injected into
- * {@link MutableComponent} at runtime.
- */
+/// Extensions for components, will be injected into
+/// [MutableComponent] at runtime.
 @RemapPrefixForJS("kjs$")
 public interface ComponentKJS extends Component, WithCodec, WrappedJS {
 
 	default Iterable<Component> kjs$asIterable() {
-		return new Iterable<>() {
-			@NotNull
-			@Override
-			public Iterator<Component> iterator() {
-				if (!kjs$hasSiblings()) {
-					return Iterators.forArray(kjs$self());
-				}
-
-				List<Component> list = new LinkedList<>();
-				list.add(kjs$self());
-
-				for (var child : getSiblings()) {
-					if (child instanceof ComponentKJS wrapped) {
-						wrapped.forEach(list::add);
-					} else {
-						list.add(child);
-					}
-				}
-
-				return list.iterator();
+		return () -> {
+			if (!kjs$hasSiblings()) {
+				return Iterators.forArray(kjs$self());
 			}
+
+			List<Component> list = new LinkedList<>();
+			list.add(kjs$self());
+
+			for (var child : getSiblings()) {
+				if (child instanceof ComponentKJS wrapped) {
+					wrapped.forEach(list::add);
+				} else {
+					list.add(child);
+				}
+			}
+
+			return list.iterator();
 		};
 	}
 
@@ -197,40 +190,53 @@ public interface ComponentKJS extends Component, WithCodec, WrappedJS {
 		return kjs$self().setStyle(getStyle().withInsertion(s));
 	}
 
-	default MutableComponent kjs$font(@Nullable ResourceLocation s) {
-		return kjs$self().setStyle(getStyle().withFont(s));
+	default MutableComponent kjs$font(@Nullable Identifier s) {
+		FontDescription fd = s == null ? FontDescription.DEFAULT : new FontDescription.Resource(s);
+		return kjs$self().setStyle(getStyle().withFont(fd));
 	}
+
 
 	default MutableComponent kjs$click(@Nullable ClickEvent s) {
 		return kjs$self().setStyle(getStyle().withClickEvent(s));
 	}
 
 	default MutableComponent kjs$clickRunCommand(String command) {
-		return kjs$click(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command));
+		return kjs$click(new ClickEvent.RunCommand(command));
 	}
 
 	default MutableComponent kjs$clickSuggestCommand(String command) {
-		return kjs$click(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command));
+		return kjs$click(new ClickEvent.SuggestCommand(command));
 	}
 
 	default MutableComponent kjs$clickCopy(String text) {
-		return kjs$click(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, text));
+		return kjs$click(new ClickEvent.CopyToClipboard(text));
 	}
 
 	default MutableComponent kjs$clickChangePage(String page) {
-		return kjs$click(new ClickEvent(ClickEvent.Action.CHANGE_PAGE, page));
+		int p;
+		try {
+			p = Integer.parseInt(page);
+		} catch (NumberFormatException ignored) {
+			p = 1;
+		}
+		return kjs$click(new ClickEvent.ChangePage(Math.max(1, p)));
 	}
 
 	default MutableComponent kjs$clickOpenUrl(String url) {
-		return kjs$click(new ClickEvent(ClickEvent.Action.OPEN_URL, url));
+		try {
+			return kjs$click(new ClickEvent.OpenUrl(URI.create(url)));
+		} catch (IllegalArgumentException ignored) {
+			return (MutableComponent) this;
+		}
 	}
 
 	default MutableComponent kjs$clickOpenFile(String path) {
-		return kjs$click(new ClickEvent(ClickEvent.Action.OPEN_FILE, path));
+		return kjs$click(new ClickEvent.OpenFile(path));
 	}
 
+
 	default MutableComponent kjs$hover(@Nullable Component s) {
-		return kjs$self().setStyle(getStyle().withHoverEvent(s == null ? null : new HoverEvent(HoverEvent.Action.SHOW_TEXT, s)));
+		return kjs$self().setStyle(getStyle().withHoverEvent(s == null ? null : new HoverEvent.ShowText(s)));
 	}
 
 	default boolean kjs$isEmpty() {
@@ -238,25 +244,4 @@ public interface ComponentKJS extends Component, WithCodec, WrappedJS {
 	}
 
 	// endregion Style extensions
-
-	// These following methods only exist for interoperability with old scripts using the Text class
-	// region Deprecated
-	@Deprecated(forRemoval = true)
-	default MutableComponent kjs$rawComponent() {
-		KubeJS.LOGGER.warn("Using rawComponent() is deprecated, since components no longer need to be wrapped to Text! You can safely remove this method.");
-		return kjs$self();
-	}
-
-	@Deprecated(forRemoval = true)
-	default MutableComponent kjs$rawCopy() {
-		KubeJS.LOGGER.warn("Using rawCopy() is deprecated, since components no longer need to be wrapped to Text! Use copy() instead.");
-		return copy();
-	}
-
-	@Deprecated(forRemoval = true)
-	default Component kjs$component() {
-		KubeJS.LOGGER.warn("Using component() is deprecated, since components no longer need to be wrapped to Text! You can safely remove this method.");
-		return kjs$self();
-	}
-	// endregion Deprecated
 }

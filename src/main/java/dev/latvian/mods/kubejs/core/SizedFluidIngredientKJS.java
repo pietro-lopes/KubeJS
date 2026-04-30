@@ -7,6 +7,7 @@ import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.FluidMatch;
 import dev.latvian.mods.kubejs.recipe.match.Replaceable;
+import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.crafting.FluidIngredient;
@@ -15,7 +16,7 @@ import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
 @RemapPrefixForJS("kjs$")
 public interface SizedFluidIngredientKJS extends Replaceable, FluidMatch {
 	default SizedFluidIngredient kjs$self() {
-		return (SizedFluidIngredient) (Object) this;
+		return Cast.to(this);
 	}
 
 	@Override
@@ -30,11 +31,11 @@ public interface SizedFluidIngredientKJS extends Replaceable, FluidMatch {
 	}
 
 	default JsonElement kjs$toFlatJson() {
-		return KubeJSCodecs.toJsonOrThrow(kjs$self(), SizedFluidIngredient.FLAT_CODEC);
+		return KubeJSCodecs.toJsonOrThrow(kjs$self(), SizedFluidIngredient.CODEC);
 	}
 
 	default JsonElement kjs$toNestedJson() {
-		return KubeJSCodecs.toJsonOrThrow(kjs$self(), SizedFluidIngredient.NESTED_CODEC);
+		return KubeJSCodecs.toJsonOrThrow(kjs$self(), SizedFluidIngredient.CODEC);
 	}
 
 	@Override

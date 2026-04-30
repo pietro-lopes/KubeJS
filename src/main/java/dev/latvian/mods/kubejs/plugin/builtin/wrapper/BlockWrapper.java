@@ -8,23 +8,22 @@ import dev.latvian.mods.kubejs.registry.RegistryKubeEvent;
 import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.kubejs.typings.Info;
 import dev.latvian.mods.kubejs.util.Cast;
-import dev.latvian.mods.kubejs.util.KubeResourceLocation;
+import dev.latvian.mods.kubejs.util.KubeIdentifier;
 import dev.latvian.mods.kubejs.util.RegistryAccessContainer;
 import dev.latvian.mods.kubejs.util.Tags;
 import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.type.RecordTypeInfo;
 import dev.latvian.mods.rhino.type.TypeInfo;
-import net.minecraft.Util;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.Util;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockSetType;
 import net.minecraft.world.level.block.state.properties.Property;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,13 +38,13 @@ import java.util.Map;
 public class BlockWrapper {
 	public static final TypeInfo TYPE_INFO = TypeInfo.of(Block.class);
 	public static final TypeInfo STATE_TYPE_INFO = TypeInfo.of(BlockState.class);
-	private static Collection<BlockState> ALL_STATE_CACHE = null;
+	private static @Nullable Collection<BlockState> ALL_STATE_CACHE = null;
 
-	public static BlockIDPredicate id(ResourceLocation id) {
+	public static BlockIDPredicate id(Identifier id) {
 		return new BlockIDPredicate(id);
 	}
 
-	public static BlockIDPredicate id(ResourceLocation id, Map<String, Object> properties) {
+	public static BlockIDPredicate id(Identifier id, Map<String, Object> properties) {
 		var b = id(id);
 
 		for (var entry : properties.entrySet()) {
@@ -55,7 +54,7 @@ public class BlockWrapper {
 		return b;
 	}
 
-	public static BlockEntityPredicate entity(ResourceLocation id) {
+	public static BlockEntityPredicate entity(Identifier id) {
 		return new BlockEntityPredicate(id);
 	}
 
@@ -63,7 +62,7 @@ public class BlockWrapper {
 		return predicate;
 	}
 
-	private static Map<String, Direction> facingMap;
+	private static @Nullable Map<String, Direction> facingMap;
 
 	@Info("Get a map of direction name to Direction. Functionally identical to Direction.ALL")
 	public static Map<String, Direction> getFacing() {
@@ -79,14 +78,14 @@ public class BlockWrapper {
 	}
 
 	@Info("Gets a Block from a block id")
-	public static Block getBlock(ResourceLocation id) {
-		return BuiltInRegistries.BLOCK.get(id);
+	public static Block getBlock(Identifier id) {
+		return BuiltInRegistries.BLOCK.getOptional(id).orElseThrow(() -> new KubeRuntimeException("Unknown block: " + id));
 	}
 
 	@Info("Gets a blocks id from the Block")
 	@Nullable
-	public static ResourceLocation getId(Block block) {
-		return BuiltInRegistries.BLOCK.getKey(block);
+	public static Identifier getId(Block block) {
+		return BuiltInRegistries.BLOCK.getKeyOrNull(block);
 	}
 
 	@Info("Gets a list of the classname of all registered blocks")
@@ -101,13 +100,13 @@ public class BlockWrapper {
 	}
 
 	@Info("Gets a list of all blocks with tags")
-	public static List<ResourceLocation> getTaggedIds(ResourceLocation tag) {
+	public static List<Identifier> getTaggedIds(Identifier tag) {
 		return Util.make(new LinkedList<>(), list -> {
 			for (var holder : BuiltInRegistries.BLOCK.getTagOrEmpty(Tags.block(tag))) {
 				var l = holder.getKey();
 
 				if (l != null) {
-					list.add(l.location());
+					list.add(l.identifier());
 				}
 			}
 		});
@@ -127,16 +126,16 @@ public class BlockWrapper {
 		return ALL_STATE_CACHE;
 	}
 
-	// TODO (26.1): RegistryAccessContainer => Context
-	public static BlockState parseBlockState(RegistryAccessContainer registries, String string) {
+	public static BlockState parseBlockState(Context cx, String string) {
 		try {
-			return BlockStateParser.parseForBlock(registries.access().lookupOrThrow(Registries.BLOCK), string, false).blockState();
+			return BlockStateParser.parseForBlock(RegistryAccessContainer.of(cx).block(), string, false).blockState();
 		} catch (Exception ex) {
-			throw new IllegalArgumentException("Invalid block state '%s'".formatted(string), ex);
+			throw new KubeRuntimeException("Invalid block state '%s'".formatted(string), ex).source(SourceLine.of(cx));
 		}
 	}
 
-	public static BlockSetType wrapSetType(Context cx, Object from, TypeInfo target) {
+	@Nullable
+	public static BlockSetType wrapSetType(Context cx, @Nullable Object from, TypeInfo target) {
 		return switch (from) {
 			case null -> null;
 			case BlockSetType type -> type;
@@ -156,19 +155,45 @@ public class BlockWrapper {
 	}
 
 	@Info("Parses a block state from the input string. May throw for invalid inputs!")
-	public static BlockState wrapBlockState(RegistryAccessContainer registries, Object o) {
+	public static BlockState wrapBlockState(Context cx, Object o) {
 		return switch (o) {
 			case null -> throw new KubeRuntimeException("BlockState cannot be null!");
 			case BlockState bs -> bs;
 			case Block block -> block.defaultBlockState();
 			default -> {
 				try {
-					yield parseBlockState(registries, o.toString());
+					yield parseBlockState(cx, o.toString());
 				} catch (IllegalArgumentException ex) {
 					throw new KubeRuntimeException("Failed to read block state from %s: %s".formatted(o, ex.getMessage()));
 				}
 			}
 		};
+	}
+
+	public static String toBlockStateString(String id, Map<String, String> properties) {
+		if (properties.isEmpty()) {
+			return id;
+		}
+
+		var builder = new StringBuilder(id);
+		builder.append('[');
+
+		var first = true;
+
+		for (var entry : properties.entrySet()) {
+			if (first) {
+				first = false;
+			} else {
+				builder.append(',');
+			}
+
+			builder.append(entry.getKey());
+			builder.append('=');
+			builder.append(entry.getValue());
+		}
+
+		builder.append(']');
+		return builder.toString();
 	}
 
 	public static BlockState withProperties(BlockState state, Map<?, ?> properties) {
@@ -189,11 +214,11 @@ public class BlockWrapper {
 		return state;
 	}
 
-	public static void registerBuildingMaterial(Context cx, RegistryKubeEvent<Block> event, KubeResourceLocation id, BuildingMaterialProperties properties) {
+	public static void registerBuildingMaterial(Context cx, RegistryKubeEvent<Block> event, KubeIdentifier id, BuildingMaterialProperties properties) {
 		properties.register(cx, event, id);
 	}
 
-	public static void registerBuildingMaterial(Context cx, RegistryKubeEvent<Block> event, KubeResourceLocation id) {
+	public static void registerBuildingMaterial(Context cx, RegistryKubeEvent<Block> event, KubeIdentifier id) {
 		registerBuildingMaterial(cx, event, id, (BuildingMaterialProperties) cx.jsToJava(Map.of(), BuildingMaterialProperties.TYPE_INFO));
 	}
 }

@@ -8,6 +8,7 @@ import dev.latvian.mods.kubejs.component.DataComponentWrapper;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.kubejs.typings.Info;
+import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.kubejs.util.RegExpKJS;
 import dev.latvian.mods.kubejs.util.RegistryAccessContainer;
@@ -18,10 +19,9 @@ import dev.latvian.mods.rhino.util.HideFromJS;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.component.DataComponentMap;
-import net.minecraft.core.component.DataComponentPredicate;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.Tag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
@@ -30,6 +30,7 @@ import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.crafting.DataComponentFluidIngredient;
 import net.neoforged.neoforge.fluids.crafting.FluidIngredient;
 import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,14 +45,12 @@ public interface FluidWrapper {
 	TypeInfo INGREDIENT_TYPE_INFO = TypeInfo.of(FluidIngredient.class);
 	TypeInfo SIZED_INGREDIENT_TYPE_INFO = TypeInfo.of(SizedFluidIngredient.class);
 
-	SizedFluidIngredient EMPTY_SIZED = new SizedFluidIngredient(FluidIngredient.empty(), FluidType.BUCKET_VOLUME);
-
 	DataResult<FluidStack> EMPTY_STACK_RESULT = success(FluidStack.EMPTY);
-	DataResult<FluidIngredient> EMPTY_INGREDIENT_RESULT = success(FluidIngredient.empty());
-	DataResult<SizedFluidIngredient> EMPTY_SIZED_RESULT = success(EMPTY_SIZED);
+	DataResult<FluidIngredient> EMPTY_INGREDIENT_RESULT = error(() -> "Empty fluid ingredients aren't supported!");
+	DataResult<SizedFluidIngredient> EMPTY_SIZED_RESULT = Cast.to(EMPTY_INGREDIENT_RESULT);
 
 	@HideFromJS
-	static DataResult<FluidStack> tryWrap(Context cx, Object from) {
+	static DataResult<FluidStack> tryWrap(Context cx, @Nullable Object from) {
 		while (from instanceof Wrapper w) {
 			from = w.unwrap();
 		}
@@ -68,9 +67,9 @@ public interface FluidWrapper {
 	}
 
 	@HideFromJS
-	static FluidStack wrap(Context cx, Object from) {
+	static FluidStack wrap(Context cx, @Nullable Object from) {
 		return tryWrap(cx, from)
-			.getOrThrow(error -> new KubeRuntimeException("Failed to read FluidStack from %s: %s".formatted(from, error))
+			.getOrThrow(err -> new KubeRuntimeException("Failed to read FluidStack from %s: %s".formatted(from, err))
 				.source(SourceLine.of(cx)));
 	}
 
@@ -88,7 +87,6 @@ public interface FluidWrapper {
 		return DataComponentFluidIngredient.of(strict, data, base);
 	}
 
-
 	@HideFromJS
 	static DataResult<FluidIngredient> tryWrapIngredient(Context cx, Object from) {
 		while (from instanceof Wrapper w) {
@@ -101,7 +99,6 @@ public interface FluidWrapper {
 			case null -> EMPTY_INGREDIENT_RESULT;
 			case FluidStack stack when stack.isEmpty() -> EMPTY_INGREDIENT_RESULT;
 			case Fluid fluid when fluid.kjs$isEmpty() -> EMPTY_INGREDIENT_RESULT;
-			case FluidIngredient in when in.isEmpty() -> EMPTY_INGREDIENT_RESULT;
 			case FluidStack stack -> success(FluidIngredient.of(stack));
 			case Fluid fluid -> success(FluidIngredient.of(fluid));
 			case FluidIngredient in -> success(in);
@@ -113,7 +110,7 @@ public interface FluidWrapper {
 	@HideFromJS
 	static FluidIngredient wrapIngredient(Context cx, Object from) {
 		return tryWrapIngredient(cx, from)
-			.getOrThrow(error -> new KubeRuntimeException("Failed to read FluidIngredient from %s: %s".formatted(from, error))
+			.getOrThrow(err -> new KubeRuntimeException("Failed to read FluidIngredient from %s: %s".formatted(from, err))
 				.source(SourceLine.of(cx)));
 	}
 
@@ -126,15 +123,14 @@ public interface FluidWrapper {
 	}
 
 	@HideFromJS
-	static DataResult<SizedFluidIngredient> tryWrapSizedIngredient(Context cx, Object o) {
+	static DataResult<SizedFluidIngredient> tryWrapSizedIngredient(Context cx, @Nullable Object o) {
 		var registries = RegistryAccessContainer.of(cx);
 
 		return switch (o) {
 			case null -> EMPTY_SIZED_RESULT;
 			case FluidStack stack when stack.isEmpty() -> EMPTY_SIZED_RESULT;
 			case Fluid fluid when fluid.kjs$isEmpty() -> EMPTY_SIZED_RESULT;
-			case FluidIngredient in when in.isEmpty() -> EMPTY_SIZED_RESULT;
-			case FluidStack stack -> success(SizedFluidIngredient.of(stack));
+			case FluidStack stack -> success(SizedFluidIngredient.of(stack.getFluid(), stack.getAmount()));
 			case Fluid fluid -> success(SizedFluidIngredient.of(fluid, FluidType.BUCKET_VOLUME));
 			case FluidIngredient in -> success(new SizedFluidIngredient(in, FluidType.BUCKET_VOLUME));
 			case SizedFluidIngredient s -> success(s);
@@ -145,7 +141,7 @@ public interface FluidWrapper {
 	@HideFromJS
 	static SizedFluidIngredient wrapSizedIngredient(Context cx, Object from) {
 		return tryWrapSizedIngredient(cx, from)
-			.getOrThrow(error -> new KubeRuntimeException("Failed to read SizedFluidIngredient from %s: %s".formatted(from, error))
+			.getOrThrow(err -> new KubeRuntimeException("Failed to read SizedFluidIngredient from %s: %s".formatted(from, err))
 				.source(SourceLine.of(cx)));
 	}
 
@@ -189,8 +185,8 @@ public interface FluidWrapper {
 		return new FluidStack(Fluids.LAVA, amount);
 	}
 
-	static Fluid getType(ResourceLocation id) {
-		return BuiltInRegistries.FLUID.get(id);
+	static Fluid getType(Identifier id) {
+		return BuiltInRegistries.FLUID.getOptional(id).orElseThrow(() -> new KubeRuntimeException("Unknown fluid: " + id));
 	}
 
 	static List<String> getTypes() {
@@ -207,11 +203,11 @@ public interface FluidWrapper {
 		return FluidStack.EMPTY;
 	}
 
-	static boolean exists(ResourceLocation id) {
+	static boolean exists(Identifier id) {
 		return BuiltInRegistries.FLUID.containsKey(id);
 	}
 
-	static ResourceLocation getId(Fluid fluid) {
+	static Identifier getId(Fluid fluid) {
 		return BuiltInRegistries.FLUID.getKey(fluid);
 	}
 
@@ -265,13 +261,13 @@ public interface FluidWrapper {
 
 	static DataResult<FluidIngredient> ingredientOfString(Context cx, DynamicOps<Tag> registryOps, String s) {
 		return switch (s) {
-			case "", "-", "empty", "minecraft:empty" -> EMPTY_INGREDIENT_RESULT;
+			case "", "-", "empty", "none", "minecraft:empty" -> EMPTY_INGREDIENT_RESULT;
 			default -> readWithContext(cx, registryOps, s, FluidWrapper::readIngredient, "FluidIngredient");
 		};
 	}
 
 	@HideFromJS
-	static DataResult<FluidIngredient> readIngredient(DynamicOps<Tag> registryOps, StringReader reader) throws CommandSyntaxException {
+	static DataResult<FluidIngredient> readIngredient(DynamicOps<Tag> registryOps, StringReader reader) {
 		if (!reader.canRead() || reader.peek() == '-') {
 			return EMPTY_INGREDIENT_RESULT;
 		}
@@ -279,7 +275,11 @@ public interface FluidWrapper {
 		return switch (reader.peek()) {
 			case '#' -> {
 				reader.skip();
-				yield ID.read(reader).map(FluidTags::create).map(FluidIngredient::tag);
+				var tagKey = ID.read(reader).map(FluidTags::create);
+				yield tagKey.map(k -> {
+					var lookup = BuiltInRegistries.acquireBootstrapRegistrationLookup(BuiltInRegistries.FLUID);
+					return FluidIngredient.of(lookup.getOrThrow(k));
+				});
 			}
 			case '@' -> {
 				reader.skip();
@@ -295,23 +295,20 @@ public interface FluidWrapper {
 				if (next == '[' || next == '{') {
 					try {
 						var components = DataComponentWrapper.readPredicate(registryOps, reader);
-
-						if (components != DataComponentPredicate.EMPTY) {
-							yield fluid.map(holder -> DataComponentFluidIngredient.of(false, components, holder));
-						}
+						yield fluid.map(holder -> DataComponentFluidIngredient.of(false, components, HolderSet.direct(holder)));
 					} catch (CommandSyntaxException e) {
 						yield error(e::getMessage);
 					}
 				}
 
-				yield fluid.map(FluidIngredient::single);
+				yield fluid.map(holder -> FluidIngredient.of(HolderSet.direct(holder.value().builtInRegistryHolder())));
 			}
 		};
 	}
 
 	static DataResult<SizedFluidIngredient> sizedIngredientOfString(Context cx, DynamicOps<Tag> registryOps, String s) {
 		return switch (s) {
-			case "", "-", "empty", "minecraft:empty" -> EMPTY_SIZED_RESULT;
+			case "", "-", "empty", "none", "minecraft:empty" -> EMPTY_SIZED_RESULT;
 			default -> readWithContext(cx, registryOps, s, FluidWrapper::readSizedIngredient, "SizedFluidIngredient");
 		};
 	}
@@ -328,9 +325,9 @@ public interface FluidWrapper {
 	}
 
 	@HideFromJS
-	static DataResult<Holder<Fluid>> findFluid(ResourceLocation id) {
+	static DataResult<Holder<Fluid>> findFluid(Identifier id) {
 		return BuiltInRegistries.FLUID
-			.getHolder(id)
+			.get(id)
 			.map(DataResult::success)
 			.orElseGet(() -> error(() -> "Fluid with ID " + id + " does not exist!"))
 			.map(Function.identity());

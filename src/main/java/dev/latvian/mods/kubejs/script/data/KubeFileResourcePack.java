@@ -3,21 +3,20 @@ package dev.latvian.mods.kubejs.script.data;
 import dev.latvian.mods.kubejs.DevProperties;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.KubeJSPaths;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.AbstractPackResources;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.FilePackResources;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.VanillaPackResources;
-import net.minecraft.server.packs.metadata.MetadataSectionSerializer;
+import net.minecraft.server.packs.metadata.MetadataSectionType;
 import net.minecraft.server.packs.repository.KnownPack;
 import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.server.packs.resources.IoSupplier;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.server.packs.resources.ResourceMetadata;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -60,7 +59,7 @@ public class KubeFileResourcePack implements PackResources {
 				if (fileNameLC.endsWith(".zip") || fileNameLC.equals(".ds_store") || fileNameLC.equals("thumbs.db") || fileNameLC.equals("desktop.ini")) {
 					continue;
 				} else if (Files.isHidden(path)) {
-					ConsoleJS.STARTUP.error("Invisible file found: " + pathName + path.relativize(p).toString().replace('\\', '/')).withExternalFile(p);
+					ScriptType.STARTUP.console.error("Invisible file found: " + pathName + path.relativize(p).toString().replace('\\', '/')).withExternalFile(p);
 					continue;
 				}
 
@@ -68,19 +67,19 @@ public class KubeFileResourcePack implements PackResources {
 
 				for (char c : chars) {
 					if (c >= 'A' && c <= 'Z') {
-						ConsoleJS.STARTUP.error("Invalid file name: Uppercase '" + c + "' in " + pathName + path.relativize(p).toString().replace('\\', '/')).withExternalFile(p);
+						ScriptType.STARTUP.console.error("Invalid file name: Uppercase '" + c + "' in " + pathName + path.relativize(p).toString().replace('\\', '/')).withExternalFile(p);
 						break;
 					} else if (c != '_' && c != '-' && (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '/' && c != '.') {
-						ConsoleJS.STARTUP.error("Invalid file name: Invalid character '" + c + "' in " + pathName + path.relativize(p).toString().replace('\\', '/')).withExternalFile(p);
+						ScriptType.STARTUP.console.error("Invalid file name: Invalid character '" + c + "' in " + pathName + path.relativize(p).toString().replace('\\', '/')).withExternalFile(p);
 						break;
 					}
 				}
 			} catch (Exception ex) {
-				ConsoleJS.STARTUP.error("Invalid file name: " + pathName + path.relativize(p).toString().replace('\\', '/'), ex).withExternalFile(p);
+				ScriptType.STARTUP.console.error("Invalid file name: " + pathName + path.relativize(p).toString().replace('\\', '/'), ex).withExternalFile(p);
 			}
 		}
 
-		ConsoleJS.STARTUP.info("Validated " + files + " files in " + pathName + " in " + (System.currentTimeMillis() - start) + "ms");
+		ScriptType.STARTUP.console.info("Validated " + files + " files in " + pathName + " in " + (System.currentTimeMillis() - start) + "ms");
 	}
 
 	public static int findBeforeModsIndex(List<PackResources> packs) {
@@ -132,8 +131,8 @@ public class KubeFileResourcePack implements PackResources {
 	}
 
 	private final PackType packType;
-	private Map<ResourceLocation, GeneratedData> generated;
-	private Set<String> generatedNamespaces;
+	private @Nullable Map<Identifier, GeneratedData> generated;
+	private @Nullable Set<String> generatedNamespaces;
 
 	public KubeFileResourcePack(PackType t) {
 		packType = t;
@@ -149,7 +148,7 @@ public class KubeFileResourcePack implements PackResources {
 		};
 	}
 
-	public Map<ResourceLocation, GeneratedData> getGenerated() {
+	public Map<Identifier, GeneratedData> getGenerated() {
 		if (generated == null) {
 			generated = new HashMap<>();
 			generate(generated);
@@ -175,7 +174,7 @@ public class KubeFileResourcePack implements PackResources {
 							continue;
 						}
 
-						var data = new GeneratedData(ResourceLocation.fromNamespaceAndPath(ns, pathStr), () -> {
+						var data = new GeneratedData(Identifier.fromNamespaceAndPath(ns, pathStr), () -> {
 							try {
 								return Files.readAllBytes(path);
 							} catch (Exception ex) {
@@ -225,7 +224,7 @@ public class KubeFileResourcePack implements PackResources {
 
 	@Override
 	@Nullable
-	public IoSupplier<InputStream> getResource(PackType type, ResourceLocation location) {
+	public IoSupplier<InputStream> getResource(PackType type, Identifier location) {
 		var r = type == packType ? getGenerated().get(location) : null;
 
 		if (r == GeneratedData.INTERNAL_RELOAD) {
@@ -235,7 +234,7 @@ public class KubeFileResourcePack implements PackResources {
 		return r;
 	}
 
-	public void generate(Map<ResourceLocation, GeneratedData> map) {
+	public void generate(Map<Identifier, GeneratedData> map) {
 	}
 
 	@Override
@@ -254,7 +253,6 @@ public class KubeFileResourcePack implements PackResources {
 	}
 
 	@Override
-	@NotNull
 	public Set<String> getNamespaces(PackType type) {
 		if (type == packType) {
 			if (generatedNamespaces == null) {
@@ -273,20 +271,20 @@ public class KubeFileResourcePack implements PackResources {
 
 	@Nullable
 	@Override
-	public <T> T getMetadataSection(MetadataSectionSerializer<T> serializer) throws IOException {
+	public <T> T getMetadataSection(MetadataSectionType<T> type) throws IOException {
 		var inputSupplier = this.getRootResource(PACK_META);
-
-		if (inputSupplier != null) {
-			try (var input = inputSupplier.get()) {
-				return AbstractPackResources.getMetadataFromStream(serializer, input);
-			}
+		if (inputSupplier == null) {
+			return null;
 		}
 
-		return null;
+		try (var in = inputSupplier.get()) {
+			var metadata = ResourceMetadata.fromJsonStream(in);
+			return metadata.getSection(type).orElse(null);
+		}
 	}
 
+
 	@Override
-	@NotNull
 	public String packId() {
 		return "KubeJS File Resource Pack [" + packType.getDirectory() + "]";
 	}

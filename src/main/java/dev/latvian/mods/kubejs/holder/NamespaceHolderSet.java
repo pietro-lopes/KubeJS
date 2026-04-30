@@ -10,32 +10,33 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.TagKey;
 import net.neoforged.neoforge.registries.holdersets.HolderSetType;
-import net.neoforged.neoforge.registries.holdersets.ICustomHolderSet;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
-public class NamespaceHolderSet<T> extends HolderSet.ListBacked<T> implements ICustomHolderSet<T> {
+public class NamespaceHolderSet<T> extends HolderSet.ListBacked<T> implements KubeJSHolderSet<T> {
 	public static <T> MapCodec<NamespaceHolderSet<T>> codec(ResourceKey<? extends Registry<T>> registryKey) {
 		return RecordCodecBuilder.mapCodec(instance -> instance.group(
-			RegistryOps.retrieveRegistryLookup(registryKey).forGetter(s -> s.registryLookup),
-			Codec.STRING.fieldOf("namespace").forGetter(s -> s.namespace)
+			RegistryOps.retrieveRegistryLookup(registryKey).forGetter(NamespaceHolderSet::registryLookup),
+			Codec.STRING.fieldOf("namespace").forGetter(NamespaceHolderSet::namespace)
 		).apply(instance, NamespaceHolderSet::new));
 	}
 
 	public static <T> StreamCodec<RegistryFriendlyByteBuf, NamespaceHolderSet<T>> streamCodec(ResourceKey<? extends Registry<T>> registryKey) {
-		return null;
+		return ByteBufCodecs.fromCodecWithRegistries(codec(registryKey).codec());
 	}
 
-	public final HolderLookup.RegistryLookup<T> registryLookup;
-	public final String namespace;
+	private final HolderLookup.RegistryLookup<T> registryLookup;
+	private final String namespace;
 
 	@Nullable
 	private Set<Holder<T>> set = null;
@@ -43,7 +44,7 @@ public class NamespaceHolderSet<T> extends HolderSet.ListBacked<T> implements IC
 	@Nullable
 	private List<Holder<T>> list = null;
 
-	private NamespaceHolderSet(HolderLookup.RegistryLookup<T> registryLookup, String namespace) {
+	NamespaceHolderSet(HolderLookup.RegistryLookup<T> registryLookup, String namespace) {
 		this.registryLookup = registryLookup;
 		this.namespace = namespace;
 	}
@@ -61,13 +62,26 @@ public class NamespaceHolderSet<T> extends HolderSet.ListBacked<T> implements IC
 		return KubeJSHolderSets.NAMESPACE.value();
 	}
 
+	public HolderLookup.RegistryLookup<T> registryLookup() {
+		return registryLookup;
+	}
+
+	public String namespace() {
+		return namespace;
+	}
+
 	@Override
 	protected List<Holder<T>> contents() {
 		if (list == null) {
-			list = List.copyOf(registryLookup.listElements().filter(ref -> ref.key().location().getNamespace().equals(namespace)).toList());
+			list = List.copyOf(registryLookup.listElements().filter(ref -> ref.key().identifier().getNamespace().equals(namespace)).toList());
 		}
 
 		return list;
+	}
+
+	@Override
+	public boolean isBound() {
+		return list != null;
 	}
 
 	@Override
@@ -92,5 +106,10 @@ public class NamespaceHolderSet<T> extends HolderSet.ListBacked<T> implements IC
 	@Override
 	public String toString() {
 		return "KubeJSNamespaceHolderSet[" + namespace + ']';
+	}
+
+	@Override
+	public String kjs$toIngredientString(Function<Holder<T>, String> elementCodec) {
+		return "@" + namespace;
 	}
 }

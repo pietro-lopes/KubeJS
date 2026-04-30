@@ -1,17 +1,20 @@
 package dev.latvian.mods.kubejs.script;
 
+import com.google.gson.JsonElement;
 import dev.latvian.apps.tinyserver.http.response.HTTPResponse;
 import dev.latvian.apps.tinyserver.ws.WSHandler;
 import dev.latvian.mods.kubejs.DevProperties;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
+import dev.latvian.mods.kubejs.plugin.builtin.wrapper.JavaWrapper;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.StringUtilsWrapper;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.TextIcons;
-import dev.latvian.mods.kubejs.util.JSObjectType;
+import dev.latvian.mods.kubejs.util.JsonIO;
+import dev.latvian.mods.kubejs.util.ListJS;
 import dev.latvian.mods.kubejs.util.LogType;
 import dev.latvian.mods.kubejs.util.MutedError;
+import dev.latvian.mods.kubejs.util.NBTUtils;
 import dev.latvian.mods.kubejs.util.StackTraceCollector;
 import dev.latvian.mods.kubejs.util.TimeJS;
-import dev.latvian.mods.kubejs.util.UtilsJS;
 import dev.latvian.mods.kubejs.util.WrappedJS;
 import dev.latvian.mods.kubejs.web.JsonContent;
 import dev.latvian.mods.kubejs.web.KJSHTTPRequest;
@@ -23,9 +26,12 @@ import dev.latvian.mods.rhino.EcmaError;
 import dev.latvian.mods.rhino.RhinoException;
 import dev.latvian.mods.rhino.WrappedException;
 import dev.latvian.mods.rhino.util.HideFromJS;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.neoforged.fml.loading.FMLLoader;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 
 import java.lang.ref.WeakReference;
@@ -40,23 +46,34 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/// Logger for a given [ScriptType], exposed to scripts as the global `console`.
+///
+/// By default, one instance of this class exists for each [ScriptType] that survives across
+/// reloads and whose log file is cleared by [#resetFile()] on reload, though custom console
+/// instances may additionally be created by users (these also save to the script type's `.log``)
+///
+/// Messages are written to:
+///
+///   - The SLF4J [Logger] (i.e. the game log / stdout)
+///   - The per-type log file at `logs/kubejs/<type>.log`, asynchronously via the type's background executor
+///   - Any connected web-socket clients via [KubeJSWeb]
+///
+/// @see JavaWrapper#createConsole(KubeJSContext, String)
+@NullUnmarked
 public class ConsoleJS {
-	public static ConsoleJS STARTUP;
-	public static ConsoleJS SERVER;
-	public static ConsoleJS CLIENT;
-
 	public static ConsoleJS getCurrent(@Nullable Context cx) {
 		if (cx instanceof KubeJSContext kcx) {
 			return kcx.getConsole();
 		}
 
-		return STARTUP;
+		return ScriptType.STARTUP.console;
 	}
 
 	private static final Pattern GARBAGE_PATTERN = Pattern.compile("(?:TRANSFORMER|LAYER PLUGIN|MC-BOOTSTRAP)/\\w+@[^/]+/");
@@ -79,7 +96,8 @@ public class ConsoleJS {
 	public final transient Collection<ConsoleLine> warnings;
 	public final transient Logger logger;
 	private final Path logFile;
-	private boolean capturingErrors;
+	/// @see #isCapturingErrors()
+	private boolean shouldCaptureErrors;
 	private String group;
 	private boolean muted;
 	private boolean debugEnabled;
@@ -95,7 +113,7 @@ public class ConsoleJS {
 		this.warnings = new ConcurrentLinkedDeque<>();
 		this.logger = log;
 		this.logFile = m.getLogFile();
-		this.capturingErrors = DevProperties.get().alwaysCaptureErrors;
+		this.shouldCaptureErrors = false; // this can be overridden by DevProperties
 		this.group = "";
 		this.muted = false;
 		this.debugEnabled = false;
@@ -145,17 +163,14 @@ public class ConsoleJS {
 	}
 
 	private synchronized void setCapturingErrors(boolean enabled) {
-		if (DevProperties.get().alwaysCaptureErrors) {
-			capturingErrors = true;
-		} else if (capturingErrors != enabled) {
-			capturingErrors = enabled;
+		var wasCapturing = shouldCaptureErrors;
+		shouldCaptureErrors = enabled;
 
-			if (!FMLLoader.isProduction()) {
-				if (capturingErrors) {
-					logger.info("Capturing errors for {} scripts enabled", scriptType.name);
-				} else {
-					logger.info("Capturing errors for {} scripts disabled", scriptType.name);
-				}
+		if (!FMLLoader.getCurrent().isProduction() && enabled != wasCapturing) {
+			if (enabled) {
+				logger.info("Capturing errors for {} scripts enabled", scriptType.name);
+			} else {
+				logger.info("Capturing errors for {} scripts disabled", scriptType.name);
 			}
 		}
 	}
@@ -173,15 +188,40 @@ public class ConsoleJS {
 		});
 	}
 
+	private Object unwrapForPrinting(Object object) {
+		return switch (object) {
+			case CharSequence cs -> cs.toString();
+			case Identifier id -> id.toString();
+			case Tag tag -> JsonIO.toObject(NBTUtils.toJson(tag));
+			case JsonElement json -> JsonIO.toObject(json);
+			case Iterable<?> itr -> ListJS.of(itr);
+			case Map<?, ?> map -> map;
+			default -> {
+				if (object.getClass().isArray()) {
+					yield ListJS.ofArray(object);
+				} else {
+					yield object;
+				}
+			}
+		};
+	}
+
 	private ConsoleLine line(LogType type, SourceLine sourceLine, Object object, @Nullable Throwable error) {
-		var o = UtilsJS.wrap(object, JSObjectType.ANY);
+		Object o = unwrapForPrinting(object);
 
 		if (o instanceof Component c) {
 			o = c.getString();
 		}
 
 		var timestamp = System.currentTimeMillis();
-		var line = new ConsoleLine(this, timestamp, o == null || o.getClass().isPrimitive() || o instanceof Boolean || o instanceof String || o instanceof Number || o instanceof WrappedJS ? String.valueOf(o) : (o + " [" + o.getClass().getName() + "]"));
+		var lineStr = (o == null
+			|| o instanceof Boolean
+			|| o instanceof Character
+			|| o instanceof Number
+			|| o instanceof CharSequence
+			|| o instanceof WrappedJS
+		) ? String.valueOf(o) : (o + " [" + o.getClass().getName() + "]");
+		var line = new ConsoleLine(this, timestamp, lineStr);
 		line.type = type;
 		line.group = group;
 
@@ -196,14 +236,14 @@ public class ConsoleJS {
 				line.withSourceLine(ex.lineSource(), ex.lineNumber());
 			}
 
-			if (capturingErrors) {
+			if (isCapturingErrors()) {
 				for (var el : ex.getScriptStack()) {
 					if (el.fileName != null && el.lineNumber >= 0) {
 						line.withSourceLine(el.fileName, el.lineNumber);
 					}
 				}
 			}
-		} else if (error != null && capturingErrors) {
+		} else if (error != null && isCapturingErrors()) {
 			for (var el : error.getStackTrace()) {
 				if (el.getFileName() != null && el.getLineNumber() >= 0 && el.getClassName().startsWith("dev.latvian.mods.kubejs.")) {
 					line.withSourceLine(el.getFileName(), el.getLineNumber());
@@ -211,19 +251,17 @@ public class ConsoleJS {
 			}
 		}
 
-		if (line.message != null) {
+		if (line.message != null && line.message.endsWith(")")) {
 			int lpi = line.message.lastIndexOf('(');
-
-			if (lpi > 0 && line.message.charAt(line.message.length() - 1) == ')') {
+			if (lpi > 0) {
 				var pe = line.message.substring(lpi + 1, line.message.length() - 1);
-
 				int ci = pe.lastIndexOf('#');
 
 				if (ci > 0) {
 					try {
 						line.withSourceLine(pe.substring(0, ci), Integer.parseInt(pe.substring(ci + 1)));
 						line.message = line.message.substring(0, lpi).trim();
-					} catch (Exception e) {
+					} catch (Exception ignored) {
 					}
 				}
 			}
@@ -245,7 +283,7 @@ public class ConsoleJS {
 			var line = line(type, sourceLine, message, error);
 			type.callback.accept(logger, line.getText());
 
-			if (capturingErrors) {
+			if (isCapturingErrors()) {
 				if (type == LogType.ERROR) {
 					errors.add(line);
 				} else if (type == LogType.WARN) {
@@ -278,16 +316,12 @@ public class ConsoleJS {
 
 		sb.append('[');
 		TimeJS.appendTimestamp(sb, calendar);
-		sb.append(']');
-		sb.append(' ');
-		sb.append('[');
+		sb.append("] [");
 		sb.append(type);
-		sb.append(']');
-		sb.append(' ');
+		sb.append("] ");
 
 		if (type == LogType.ERROR) {
-			sb.append('!');
-			sb.append(' ');
+			sb.append("! ");
 		}
 
 		sb.append(line);
@@ -344,7 +378,7 @@ public class ConsoleJS {
 	public ConsoleLine warn(String message, SourceLine sourceLine, Throwable error, @Nullable Pattern exitPattern) {
 		if (shouldPrint()) {
 			var l = log(LogType.WARN, sourceLine, error, messageForPrint(message, error));
-			handleError(l, error, exitPattern, !capturingErrors);
+			handleError(l, error, exitPattern, !isCapturingErrors());
 			return l;
 		}
 
@@ -580,6 +614,10 @@ public class ConsoleJS {
 			.append(Component.literal(" KubeJS errors found [" + errors.size() + "]!").kjs$red())
 			.kjs$clickRunCommand(command)
 			.kjs$hover(Component.literal("Click to show more info"));
+	}
+
+	private boolean isCapturingErrors() {
+		return shouldCaptureErrors || DevProperties.get().alwaysCaptureErrors;
 	}
 
 	private static final class VarFunc implements Comparable<VarFunc> {

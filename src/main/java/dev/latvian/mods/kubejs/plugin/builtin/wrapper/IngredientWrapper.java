@@ -1,5 +1,6 @@
 package dev.latvian.mods.kubejs.plugin.builtin.wrapper;
 
+import com.google.errorprone.annotations.DoNotCall;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
@@ -12,12 +13,10 @@ import com.mojang.serialization.JavaOps;
 import com.mojang.serialization.JsonOps;
 import dev.latvian.mods.kubejs.component.DataComponentWrapper;
 import dev.latvian.mods.kubejs.core.IngredientSupplierKJS;
-import dev.latvian.mods.kubejs.core.ItemStackKJS;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
+import dev.latvian.mods.kubejs.holder.NamespaceHolderSet;
+import dev.latvian.mods.kubejs.holder.RegExHolderSet;
 import dev.latvian.mods.kubejs.ingredient.CreativeTabIngredient;
-import dev.latvian.mods.kubejs.ingredient.NamespaceIngredient;
-import dev.latvian.mods.kubejs.ingredient.RegExIngredient;
-import dev.latvian.mods.kubejs.ingredient.WildcardIngredient;
 import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.kubejs.typings.Info;
 import dev.latvian.mods.kubejs.util.ID;
@@ -33,7 +32,7 @@ import dev.latvian.mods.rhino.util.HideFromJS;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.component.DataComponentMap;
-import net.minecraft.core.component.DataComponentPredicate;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
@@ -44,9 +43,9 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.ItemLike;
 import net.neoforged.neoforge.common.crafting.CompoundIngredient;
 import net.neoforged.neoforge.common.crafting.DataComponentIngredient;
-import net.neoforged.neoforge.common.crafting.ICustomIngredient;
 import net.neoforged.neoforge.common.crafting.SizedIngredient;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.registries.holdersets.AnyHolderSet;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,13 +56,14 @@ import java.util.stream.Stream;
 
 @Info("Various Ingredient related helper methods")
 public interface IngredientWrapper {
+	@HideFromJS
+	DataResult<Ingredient> EMPTY_INGREDIENT = DataResult.error(() -> "Empty ingredients aren't supported!");
+
+	private static DataResult<Ingredient> unknownTag(Identifier tag) {
+		return DataResult.error(() -> "Item tag " + tag + " does not exist!");
+	}
+
 	TypeInfo TYPE_INFO = TypeInfo.of(Ingredient.class);
-
-	@Info("A completely empty ingredient that will only match air")
-	Ingredient none = Ingredient.EMPTY;
-
-	@Info("An ingredient that matches everything")
-	Ingredient all = WildcardIngredient.INSTANCE.toVanilla();
 
 	@Info("Returns an ingredient of the input")
 	static Ingredient of(Ingredient ingredient) {
@@ -73,6 +73,25 @@ public interface IngredientWrapper {
 	@Info("Returns an ingredient of the input, with the specified count")
 	static SizedIngredient of(Ingredient ingredient, int count) {
 		return ingredient.kjs$withCount(count);
+	}
+
+	@Info("An ingredient that matches everything")
+	static Ingredient getAll(Context cx) {
+		return Ingredient.of(new AnyHolderSet<>(RegistryAccessContainer.of(cx).item()));
+	}
+
+	@DoNotCall
+	@Deprecated(forRemoval = true)
+	@Info("Empty ingredients are no longer supported. Do not call!")
+	static Ingredient getNone(Context cx) {
+		return EMPTY_INGREDIENT.getOrThrow(str -> new KubeRuntimeException(str).source(SourceLine.of(cx)));
+	}
+
+	@DoNotCall
+	@Deprecated(forRemoval = true)
+	@Info("Empty ingredients are no longer supported. Do not call!")
+	static Ingredient of(Context cx) {
+		return getNone(cx);
 	}
 
 	@Info("Returns an ingredient that accepts the given set of items under the given component filter.")
@@ -86,41 +105,44 @@ public interface IngredientWrapper {
 	}
 
 	@HideFromJS
-	private static Ingredient wrapTrivial(@Nullable Object from) {
-		while (from instanceof Wrapper w) {
-			from = w.unwrap();
-		}
-
-		return switch (from) {
-			case null -> Ingredient.EMPTY;
-			case Ingredient id -> id;
-			case ItemStack s when s.isEmpty() -> Ingredient.EMPTY;
-			case ItemLike i when i.asItem() == Items.AIR -> Ingredient.EMPTY;
-			case IngredientSupplierKJS ingr -> ingr.kjs$asIngredient();
-			case ItemLike i -> Ingredient.of(i);
-			case TagKey<?>(ResourceKey<?> reg, var location) -> Ingredient.of(ItemTags.create(location));
-			default -> null;
-		};
-	}
-
-	@HideFromJS
 	static DataResult<Ingredient> wrapResult(Context cx, @Nullable Object from) {
 		while (from instanceof Wrapper w) {
 			from = w.unwrap();
 		}
 
-		var trivial = wrapTrivial(from);
+		var registries = RegistryAccessContainer.of(cx);
+
+		var trivial = switch (from) {
+			case null -> EMPTY_INGREDIENT;
+			case Ingredient id -> DataResult.success(id);
+			case ItemStack s when s.isEmpty() -> EMPTY_INGREDIENT;
+			case ItemLike i when i.asItem() == Items.AIR -> EMPTY_INGREDIENT;
+			case IngredientSupplierKJS ingr -> DataResult.success(ingr.kjs$asIngredient());
+			case ItemLike i -> DataResult.success(Ingredient.of(i));
+			case TagKey<?>(ResourceKey<?> reg, var id) -> {
+				var tagKey = ItemTags.create(id);
+				yield registries.get(tagKey)
+					.map(Ingredient::of)
+					.map(DataResult::success)
+					.orElseGet(() -> unknownTag(id))
+					;
+			}
+
+			default -> null;
+		};
+
 		if (trivial != null) {
-			return DataResult.success(trivial);
+			return trivial;
 		}
 
 		if (from instanceof Pattern || from instanceof NativeRegExp) {
 			var str = String.valueOf(from);
+			//noinspection DataFlowIssue (safe, no idea what idea is smoking)
 			return Optional.ofNullable(RegExpKJS.wrap(from))
 				.map(DataResult::success)
 				.orElseGet(() -> DataResult.error(() -> "Invalid regex " + str))
-				.map(RegExIngredient::new)
-				.map(ICustomIngredient::toVanilla)
+				.map(regex -> RegExHolderSet.of(registries.item(), regex))
+				.map(Ingredient::of)
 				;
 		} else if (from instanceof JsonElement json) {
 			return parseJson(cx, json);
@@ -138,9 +160,7 @@ public interface IngredientWrapper {
 			for (var o1 : list) {
 				var ingredient = wrapResult(cx, o1);
 
-				ingredient.resultOrPartial()
-					.filter(ingr -> ingr != Ingredient.EMPTY)
-					.ifPresent(results::add);
+				ingredient.resultOrPartial().ifPresent(results::add);
 
 				if (ingredient.isError()) {
 					failed = true;
@@ -152,11 +172,11 @@ public interface IngredientWrapper {
 				var msg = errors.build().collect(Collectors.joining("; "));
 				return DataResult.error(() -> "Failed to parse ingredient list: " + msg);
 			} else {
-				return DataResult.success(switch (results.size()) {
-					case 0 -> Ingredient.EMPTY;
-					case 1 -> results.getFirst();
-					default -> new CompoundIngredient(results).toVanilla();
-				});
+				return switch (results.size()) {
+					case 0 -> EMPTY_INGREDIENT;
+					case 1 -> DataResult.success(results.getFirst());
+					default -> DataResult.success(new CompoundIngredient(results).toVanilla());
+				};
 			}
 		}
 
@@ -166,30 +186,33 @@ public interface IngredientWrapper {
 			return Ingredient.CODEC.parse(JavaOps.INSTANCE, map);
 		}
 
-		return ItemWrapper.wrapResult(cx, from).map(ItemStackKJS::kjs$asIngredient);
+		return ItemWrapper.wrapResult(cx, from).flatMap(IngredientWrapper::tryFromStack);
+	}
+
+	private static DataResult<Ingredient> tryFromStack(ItemStack stack) {
+		if (stack.isEmpty()) {
+			return DataResult.error(() -> "Ingredient cannot be made from empty stack!");
+		} else {
+			return DataResult.success(Ingredient.of(stack.getItem()));
+		}
 	}
 
 	@HideFromJS
 	static Ingredient wrap(Context cx, @Nullable Object from) {
-		var trivial = wrapTrivial(from);
-		if (trivial != null) {
-			return trivial;
-		}
-
 		return wrapResult(cx, from)
 			.getOrThrow(error -> new KubeRuntimeException("Failed to read ingredient from %s: %s".formatted(from, error))
 				.source(SourceLine.of(cx)));
 	}
 
-	static boolean isIngredientLike(Object from) {
+	static boolean isIngredientLike(@Nullable Object from) {
 		return from instanceof Ingredient || from instanceof SizedIngredient || from instanceof ItemStack;
 	}
 
-	static DataResult<Ingredient> parseJson(Context cx, JsonElement json) {
+	static DataResult<Ingredient> parseJson(Context cx, @Nullable JsonElement json) {
 		return switch (json) {
-			case null -> DataResult.success(Ingredient.EMPTY);
-			case JsonNull jsonNull -> DataResult.success(Ingredient.EMPTY);
-			case JsonArray arr when arr.isEmpty() -> DataResult.success(Ingredient.EMPTY);
+			case null -> EMPTY_INGREDIENT;
+			case JsonNull jsonNull -> EMPTY_INGREDIENT;
+			case JsonArray arr when arr.isEmpty() -> EMPTY_INGREDIENT;
 			case JsonPrimitive primitive -> wrapResult(cx, json.getAsString());
 			default -> Ingredient.CODEC.decode(JsonOps.INSTANCE, json).map(Pair::getFirst);
 		};
@@ -197,8 +220,8 @@ public interface IngredientWrapper {
 
 	static DataResult<Ingredient> parseString(Context cx, String s) {
 		return switch (s) {
-			case "", "-", "air", "minecraft:air" -> DataResult.success(Ingredient.EMPTY);
-			case "*" -> DataResult.success(IngredientWrapper.all);
+			case "", "-", "air", "minecraft:air" -> EMPTY_INGREDIENT;
+			case "*" -> DataResult.success(IngredientWrapper.getAll(cx));
 			default -> read(cx, new StringReader(s));
 		};
 	}
@@ -209,26 +232,29 @@ public interface IngredientWrapper {
 		reader.skipWhitespace();
 
 		if (!reader.canRead()) {
-			return DataResult.success(Ingredient.EMPTY);
+			return EMPTY_INGREDIENT;
 		}
 
 		return switch (reader.peek()) {
 			case '-' -> {
 				reader.skip();
-				yield DataResult.success(Ingredient.EMPTY);
+				yield EMPTY_INGREDIENT;
 			}
 			case '*' -> {
 				reader.skip();
-				yield DataResult.success(IngredientWrapper.all);
+				yield DataResult.success(IngredientWrapper.getAll(cx));
 			}
 			case '#' -> {
 				reader.skip();
-				// yield new TagIngredient(registries.cachedItemTags, ItemTags.create(ID.read(reader))).toVanilla();
-				yield ID.read(reader).map(ItemTags::create).map(Ingredient::of);
+				yield ID.read(reader).map(ItemTags::create).flatMap(tagKey ->
+					registries.get(tagKey)
+						.map(set -> DataResult.success(Ingredient.of(set)))
+						.orElseGet(() -> unknownTag(tagKey.location()))
+				);
 			}
 			case '@' -> {
 				reader.skip();
-				yield DataResult.success(new NamespaceIngredient(reader.readUnquotedString()).toVanilla());
+				yield DataResult.success(new Ingredient(NamespaceHolderSet.of(registries.item(), reader.readUnquotedString())));
 			}
 			case '%' -> {
 				reader.skip();
@@ -239,13 +265,13 @@ public interface IngredientWrapper {
 					})
 					.map(group -> new CreativeTabIngredient(group).toVanilla());
 			}
-			case '/' -> RegExpKJS.tryRead(reader).map(RegExIngredient::new).map(ICustomIngredient::toVanilla);
+			case '/' -> RegExpKJS.tryRead(reader).map(regex -> RegExHolderSet.of(registries.item(), regex)).map(Ingredient::of);
 			case '[' -> {
 				reader.skip();
 				reader.skipWhitespace();
 
 				if (!reader.canRead() || reader.peek() == ']') {
-					yield DataResult.success(Ingredient.EMPTY);
+					yield EMPTY_INGREDIENT;
 				}
 
 				var ingredients = new ArrayList<Ingredient>(2);
@@ -285,11 +311,12 @@ public interface IngredientWrapper {
 
 				if (next == '[' || next == '{') {
 					try {
-						var components = DataComponentWrapper.readPredicate(registries.nbt(), reader);
+						var components = DataComponentWrapper.readMap(registries.nbt(), reader);
 
-						if (components != DataComponentPredicate.EMPTY) {
+						if (!components.isEmpty()) {
 							yield item.map(holder -> DataComponentIngredient.of(false, components, holder));
 						}
+
 					} catch (CommandSyntaxException e) {
 						yield DataResult.error(e::getMessage);
 					}
@@ -297,6 +324,7 @@ public interface IngredientWrapper {
 
 				yield item.map(Holder::value).map(Ingredient::of);
 			}
+
 		};
 	}
 
@@ -314,24 +342,11 @@ public interface IngredientWrapper {
 
 	@Nullable
 	static TagKey<Item> tagKeyOf(Ingredient in) {
-		if (!in.isCustom() && in.getValues().length == 1 && in.getValues()[0] instanceof Ingredient.TagValue(TagKey<Item> tag)) {
-			return tag;
-		} else {
+		if (in.isCustom()) {
 			return null;
 		}
-	}
 
-	static boolean containsAnyTag(Ingredient in) {
-		if (in.isCustom()) {
-			return false;
-		}
-
-		for (var value : in.getValues()) {
-			if (value instanceof Ingredient.TagValue) {
-				return true;
-			}
-		}
-
-		return false;
+		var values = in.getValues();
+		return values.unwrapKey().orElse(null);
 	}
 }

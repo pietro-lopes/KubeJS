@@ -17,16 +17,14 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.crafting.FluidIngredient;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
-/**
- * Note: predicateType has to be able to be cast to {@link java.util.function.Predicate} of entryType
- */
+/// Note: predicateType has to be able to be cast to [Predicate] of entryType
 public class RecipeViewerEntryType {
 	public record Component<T>(TypeInfo type, StreamCodec<?, T> streamCodec, Predicate<T> empty) {
 	}
@@ -54,7 +52,7 @@ public class RecipeViewerEntryType {
 
 	public static final RecipeViewerEntryType FLUID = new RecipeViewerEntryType("fluid",
 		new Component<>(FluidWrapper.TYPE_INFO, FluidStack.STREAM_CODEC, FluidStack::isEmpty),
-		new Component<>(FluidWrapper.INGREDIENT_TYPE_INFO, FluidIngredient.STREAM_CODEC, FluidIngredient::isEmpty),
+		new Component<>(FluidWrapper.INGREDIENT_TYPE_INFO, FluidIngredient.STREAM_CODEC, fi -> fi.fluids().isEmpty()),
 		new Component<>(FluidWrapper.FLUID_TYPE_INFO, ByteBufCodecs.registry(Registries.FLUID), FluidKJS::kjs$isEmpty)
 	) {
 		@Override
@@ -83,6 +81,7 @@ public class RecipeViewerEntryType {
 		return List.copyOf(list);
 	});
 
+	@Nullable
 	public static RecipeViewerEntryType fromString(@Nullable Object id) {
 		return switch (id == null ? "" : id.toString()) {
 			case null -> null;

@@ -1,5 +1,7 @@
 package dev.latvian.mods.kubejs.core.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.latvian.mods.kubejs.core.MinecraftServerKJS;
 import dev.latvian.mods.kubejs.gui.chest.CustomChestMenu;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugin;
@@ -21,12 +23,12 @@ import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.MultiPackResourceManager;
 import net.minecraft.world.item.ItemStack;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -52,10 +54,10 @@ public abstract class MinecraftServerMixin implements MinecraftServerKJS {
 	private final CompoundTag kjs$persistentData = new CompoundTag();
 
 	@Unique
-	private ServerLevel kjs$overworld;
+	private @Nullable ServerLevel kjs$overworld;
 
 	@Unique
-	private AttachedData<MinecraftServer> kjs$attachedData;
+	private @Nullable AttachedData<MinecraftServer> kjs$attachedData;
 
 	@Unique
 	private final Map<UUID, Map<Integer, ItemStack>> kjs$restoreInventories = new HashMap<>(1);
@@ -103,7 +105,7 @@ public abstract class MinecraftServerMixin implements MinecraftServerKJS {
 				if (map != null && player.isAlive() && !player.hasDisconnected() && !(player.containerMenu instanceof CustomChestMenu)) {
 					kjs$restoreInventories.remove(player.getUUID());
 
-					var playerItems = player.getInventory().items;
+					var playerItems = player.getInventory().getNonEquipmentItems();
 
 					for (int i = 0; i < playerItems.size(); i++) {
 						playerItems.set(i, map.getOrDefault(i, ItemStack.EMPTY));
@@ -135,14 +137,20 @@ public abstract class MinecraftServerMixin implements MinecraftServerKJS {
 	@RemapForJS("stop")
 	public abstract void stopServer();
 
+	@Shadow
+	public abstract MinecraftServer.ReloadableResources getServerResources();
+
 	@Inject(method = "reloadResources", at = @At("TAIL"))
 	private void kjs$endResourceReload(Collection<String> collection, CallbackInfoReturnable<CompletableFuture<Void>> cir) {
 		CompletableFuture.runAsync(() -> kjs$afterResourcesLoaded(true), kjs$self());
 	}
 
 	// There's a good chance this will break in the future, but currently that's the only reliable way to both inject packs and reload scripts before resources that I could find
-	@Redirect(method = "lambda$reloadResources$29", at = @At(value = "NEW", target = "(Lnet/minecraft/server/packs/PackType;Ljava/util/List;)Lnet/minecraft/server/packs/resources/MultiPackResourceManager;"))
-	private MultiPackResourceManager kjs$modifyResourceReload(PackType type, List<PackResources> original) {
-		return new MultiPackResourceManager(type, ServerScriptManager.createPackResources(original));
+	@WrapOperation(method = "lambda$reloadResources$1", at = @At(
+		value = "NEW",
+		target = "(Lnet/minecraft/server/packs/PackType;Ljava/util/List;)Lnet/minecraft/server/packs/resources/MultiPackResourceManager;")
+	)
+	private MultiPackResourceManager kjs$createResourceManager(PackType type, List<PackResources> original, Operation<MultiPackResourceManager> ctor) {
+		return ServerScriptManager.bindServerResources(original, false, ctor::call);
 	}
 }

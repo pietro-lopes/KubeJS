@@ -1,4 +1,5 @@
 package dev.latvian.mods.kubejs.integration.jei;
+/*
 
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.event.EventResult;
@@ -7,8 +8,8 @@ import dev.latvian.mods.rhino.Context;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.category.IRecipeCategory;
-import net.minecraft.resources.ResourceLocation;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.resources.Identifier;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,13 +19,13 @@ import java.util.Map;
 import java.util.Set;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
-public class JEIRemoveRecipesKubeEvent implements RemoveRecipesKubeEvent {
+public class JEIRemoveRecipesKubeEvent implements RemoveRecipesKubeEvent  {
 	private final IRecipeManager recipeManager;
-	private final Map<ResourceLocation, IRecipeCategory> categories;
-	private final Set<ResourceLocation> removedGlobal;
-	private final Map<IRecipeCategory, Collection<ResourceLocation>> removed;
+	private final Map<Identifier, IRecipeCategory> categories;
+	private final Set<Identifier> removedGlobal;
+	private final Map<IRecipeCategory, Collection<Identifier>> removed;
 
-	public JEIRemoveRecipesKubeEvent(IRecipeManager recipeManager, Map<ResourceLocation, IRecipeCategory<?>> categories) {
+	public JEIRemoveRecipesKubeEvent(IRecipeManager recipeManager, Map<Identifier, IRecipeCategory<?>> categories) {
 		this.recipeManager = recipeManager;
 		this.categories = (Map) categories;
 		this.removedGlobal = new HashSet<>();
@@ -32,14 +33,14 @@ public class JEIRemoveRecipesKubeEvent implements RemoveRecipesKubeEvent {
 	}
 
 	@Override
-	public void remove(Context cx, ResourceLocation[] recipesToRemove) {
+	public void remove(Context cx, Identifier[] recipesToRemove) {
 		for (var cat : categories.values()) {
 			removed.computeIfAbsent(cat, _0 -> new HashSet<>()).addAll(Arrays.asList(recipesToRemove));
 		}
 	}
 
 	@Override
-	public void removeFromCategory(Context cx, @Nullable ResourceLocation category, ResourceLocation[] recipesToRemove) {
+	public void removeFromCategory(Context cx, @Nullable Identifier category, Identifier[] recipesToRemove) {
 		if (category == null) {
 			remove(cx, recipesToRemove);
 			return;
@@ -80,4 +81,4 @@ public class JEIRemoveRecipesKubeEvent implements RemoveRecipesKubeEvent {
 			}
 		}
 	}
-}
+}*/

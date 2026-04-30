@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.Lifecycle;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.KubeJSPaths;
+import dev.latvian.mods.kubejs.core.ScriptManagerHolderKJS;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.net.SyncServerDataPayload;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugin;
@@ -14,52 +15,50 @@ import dev.latvian.mods.kubejs.registry.AdditionalObjectRegistry;
 import dev.latvian.mods.kubejs.registry.BuilderBase;
 import dev.latvian.mods.kubejs.registry.RegistryObjectStorage;
 import dev.latvian.mods.kubejs.registry.ServerRegistryKubeEvent;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
 import dev.latvian.mods.kubejs.script.ScriptManager;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.kubejs.script.data.GeneratedDataStage;
 import dev.latvian.mods.kubejs.script.data.KubeFileResourcePack;
 import dev.latvian.mods.kubejs.script.data.VirtualDataPack;
-import dev.latvian.mods.kubejs.server.tag.PreTagKubeEvent;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.RegistryAccessContainer;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.resources.MultiPackResourceManager;
 import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.neoforge.registries.DataPackRegistriesHooks;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.ApiStatus;
+import org.jspecify.annotations.Nullable;
 
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class ServerScriptManager extends ScriptManager {
-	private static ServerScriptManager staticInstance;
-
 	@ApiStatus.Internal
 	public static ServerScriptManager createForDataGen() {
-		var manager = new ServerScriptManager();
+		var manager = new ServerScriptManager(true);
 		manager.reload(); // Is this needed?
 		return manager;
 	}
 
-	public static List<PackResources> createPackResources(List<PackResources> original) {
+	@ApiStatus.Internal
+	public static MultiPackResourceManager bindServerResources(List<PackResources> original, boolean firstLoad, BiFunction<PackType, List<PackResources>, MultiPackResourceManager> ctor) {
 		var packs = new ArrayList<>(original);
 
 		var filePacks = new ArrayList<PackResources>();
@@ -70,7 +69,8 @@ public class ServerScriptManager extends ScriptManager {
 		int beforeModsIndex = KubeFileResourcePack.findBeforeModsIndex(packs);
 		int afterModsIndex = KubeFileResourcePack.findAfterModsIndex(packs);
 
-		var manager = new ServerScriptManager();
+		var manager = new ServerScriptManager(firstLoad);
+
 		packs.add(beforeModsIndex, manager.virtualPacks.get(GeneratedDataStage.BEFORE_MODS));
 		packs.add(afterModsIndex, manager.internalDataPack);
 		packs.add(afterModsIndex + 1, manager.registriesDataPack);
@@ -78,33 +78,27 @@ public class ServerScriptManager extends ScriptManager {
 		packs.addAll(afterModsIndex + 3, filePacks);
 		packs.add(manager.virtualPacks.get(GeneratedDataStage.LAST));
 		manager.reload();
-		staticInstance = manager;
 
-		if (!FMLLoader.isProduction()) {
+		if (!FMLLoader.getCurrent().isProduction()) {
 			KubeJS.LOGGER.info("Loaded {} data packs: {}", packs.size(), packs.stream().map(PackResources::packId).collect(Collectors.joining(", ")));
 		}
 
-		return packs;
+		var resources = ctor.apply(PackType.SERVER_DATA, packs);
+		((ScriptManagerHolderKJS) resources).kjs$setScriptManager(manager);
+
+		return resources;
 	}
 
-	public static ServerScriptManager release() {
-		var instance = Objects.requireNonNull(staticInstance);
-		staticInstance = null;
-		return instance;
-	}
-
-	public final Map<ResourceKey<?>, PreTagKubeEvent> preTagEvents;
 	public final RecipeSchemaStorage recipeSchemaStorage;
-	public SyncServerDataPayload serverData;
+	public @Nullable SyncServerDataPayload serverData;
 	public final VirtualDataPack internalDataPack;
 	public final VirtualDataPack registriesDataPack;
 	public final Map<GeneratedDataStage, VirtualDataPack> virtualPacks;
-	public final Map<ResourceLocation, Set<ResourceLocation>> serverRegistryTags;
+	public final Map<Identifier, Set<Identifier>> serverRegistryTags;
 	public boolean firstLoad;
 
-	private ServerScriptManager() {
+	private ServerScriptManager(boolean firstLoad) {
 		super(ScriptType.SERVER);
-		this.preTagEvents = new ConcurrentHashMap<>();
 		this.recipeSchemaStorage = new RecipeSchemaStorage(this);
 		this.serverData = null;
 
@@ -113,7 +107,7 @@ public class ServerScriptManager extends ScriptManager {
 		this.virtualPacks = GeneratedDataStage.forScripts(stage -> new VirtualDataPack(stage, this::getRegistries));
 		serverRegistryTags = new HashMap<>();
 
-		this.firstLoad = true;
+		this.firstLoad = firstLoad;
 
 		try {
 			if (Files.notExists(KubeJSPaths.DATA)) {
@@ -126,10 +120,10 @@ public class ServerScriptManager extends ScriptManager {
 
 	@Override
 	public void loadFromDirectory() {
-		ConsoleJS.SERVER.startCapturingErrors();
+		ScriptType.SERVER.console.startCapturingErrors();
 		super.loadFromDirectory();
 
-		if (FMLLoader.getDist().isDedicatedServer()) {
+		if (FMLLoader.getCurrent().getDist().isDedicatedServer()) {
 			loadPackFromDirectory(KubeJSPaths.LOCAL_SERVER_SCRIPTS, "local server", true);
 		}
 	}
@@ -176,7 +170,7 @@ public class ServerScriptManager extends ScriptManager {
 		if (furnaceFuelsJson.size() > 0) {
 			var json = new JsonObject();
 			json.add("values", furnaceFuelsJson);
-			internalDataPack.json(ResourceLocation.fromNamespaceAndPath("neoforge", "data_maps/item/furnace_fuels.json"), json);
+			internalDataPack.json(Identifier.fromNamespaceAndPath("neoforge", "data_maps/item/furnace_fuels.json"), json);
 		}
 		 */
 
@@ -192,17 +186,19 @@ public class ServerScriptManager extends ScriptManager {
 					final Map<ResourceKey<? extends Registry<?>>, Optional<Registry<?>>> registries = new HashMap<>();
 
 					@Override
-					public <E> Optional<Registry<E>> registry(ResourceKey<? extends Registry<? extends E>> registryKey) {
+					public <E> Optional<Registry<E>> lookup(ResourceKey<? extends Registry<? extends E>> registryKey) {
 						return Cast.to(registries.computeIfAbsent(registryKey, key -> {
-							var c = current.access().registry(key);
-							if (c.isPresent()) return Cast.to(c);
+							var c = current.lookup(key);
+							if (c.isPresent()) {
+								return Cast.to(c);
+							}
 							return Optional.of(new MappedRegistry(key, Lifecycle.experimental()));
 						}));
 					}
 
 					@Override
 					public Stream<RegistryEntry<?>> registries() {
-						return current.access().registries();
+						return current.registries();
 					}
 				});
 
@@ -233,7 +229,7 @@ public class ServerScriptManager extends ScriptManager {
 
 				for (var b : builders) {
 					if (b.registryKey == null) {
-						ConsoleJS.SERVER.error("", new KubeRuntimeException("Failed to register object '" + b.id + "' - unknown registry").source(b.sourceLine));
+						ScriptType.SERVER.console.error("", new KubeRuntimeException("Failed to register object '" + b.id + "' - unknown registry").source(b.sourceLine));
 						continue;
 					}
 
@@ -241,20 +237,20 @@ public class ServerScriptManager extends ScriptManager {
 						var codec = codecs.get(b.registryKey);
 
 						if (codec == null) {
-							throw new KubeRuntimeException("Don't know how to encode '" + b.id + "' of '" + b.registryKey.location() + "'!").source(b.sourceLine);
+							throw new KubeRuntimeException("Don't know how to encode '" + b.id + "' of '" + b.registryKey.identifier() + "'!").source(b.sourceLine);
 						}
 
 						var obj = b.createTransformedObject();
 						var json = codec.encodeStart(ops, Cast.to(obj)).getOrThrow();
-						var k = b.registryKey.location();
+						var k = b.registryKey.identifier();
 
 						if (k.getNamespace().equals("minecraft")) {
-							registriesDataPack.json(ResourceLocation.fromNamespaceAndPath(b.id.getNamespace(), k.getPath() + "/" + b.id.getPath()), json);
+							registriesDataPack.json(Identifier.fromNamespaceAndPath(b.id.getNamespace(), k.getPath() + "/" + b.id.getPath()), json);
 						} else {
-							registriesDataPack.json(ResourceLocation.fromNamespaceAndPath(b.id.getNamespace(), k.getNamespace() + "/" + k.getPath() + "/" + b.id.getPath()), json);
+							registriesDataPack.json(Identifier.fromNamespaceAndPath(b.id.getNamespace(), k.getNamespace() + "/" + k.getPath() + "/" + b.id.getPath()), json);
 						}
 					} catch (Exception ex) {
-						ConsoleJS.SERVER.error("", new KubeRuntimeException("Failed to register object '" + b.id + "' of registry '" + b.registryKey.location() + "'!", ex).source(b.sourceLine));
+						ScriptType.SERVER.console.error("", new KubeRuntimeException("Failed to register object '" + b.id + "' of registry '" + b.registryKey.identifier() + "'!", ex).source(b.sourceLine));
 					}
 				}
 
@@ -277,8 +273,6 @@ public class ServerScriptManager extends ScriptManager {
 
 		super.reload();
 
-		PreTagKubeEvent.handle(preTagEvents);
-
 		internalDataPack.flush();
 
 		for (var pack : virtualPacks.values()) {
@@ -297,10 +291,5 @@ public class ServerScriptManager extends ScriptManager {
 		if (server != null) {
 			server.execute(() -> server.kjs$runCommand("reload"));
 		}
-	}
-
-	public void reloadAndCapture() {
-		reload();
-		staticInstance = this;
 	}
 }

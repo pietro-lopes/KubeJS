@@ -3,37 +3,41 @@ package dev.latvian.mods.kubejs.util;
 import com.google.gson.JsonArray;
 import com.mojang.serialization.JavaOps;
 import com.mojang.serialization.JsonOps;
+import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.RegistryWrapper;
 import dev.latvian.mods.kubejs.recipe.CachedItemTagLookup;
 import dev.latvian.mods.kubejs.recipe.CachedTagLookup;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
 import dev.latvian.mods.kubejs.script.KubeJSContext;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.server.DataExport;
 import dev.latvian.mods.rhino.Context;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
-import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.tags.TagLoader;
 import net.minecraft.world.damagesource.DamageSources;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.material.Fluid;
 import net.neoforged.neoforge.common.conditions.ICondition;
 import org.jetbrains.annotations.ApiStatus;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Stream;
 
-public final class RegistryAccessContainer extends RegistryOpsContainer implements ICondition.IContext {
+public final class RegistryAccessContainer extends RegistryOpsContainer implements RegistryAccess, ICondition.IContext {
 	public static final RegistryAccessContainer BUILTIN = new RegistryAccessContainer(RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY));
 
 	// Still necessary because STARTUP and CLIENT scripts need to know about registries
@@ -45,13 +49,13 @@ public final class RegistryAccessContainer extends RegistryOpsContainer implemen
 	}
 
 	private final RegistryAccess.Frozen access;
-	private DamageSources damageSources;
+	private @Nullable DamageSources damageSources;
 	private final Map<String, ItemStack> itemStackParseCache;
 	public final Map<ResourceKey<?>, CachedTagLookup.Entry<?>> cachedRegistryTags;
-	public CachedItemTagLookup cachedItemTags;
-	public CachedTagLookup<Block> cachedBlockTags;
-	public CachedTagLookup<Fluid> cachedFluidTags;
-	private Map<ResourceLocation, RegistryWrapper> cachedRegistryWrappers;
+	public @Nullable CachedItemTagLookup cachedItemTags;
+	public @Nullable CachedTagLookup<Block> cachedBlockTags;
+	public @Nullable CachedTagLookup<Fluid> cachedFluidTags;
+	private final Map<Identifier, RegistryWrapper> cachedRegistryWrappers = new HashMap<>();
 
 	public RegistryAccessContainer(RegistryAccess.Frozen access) {
 		super(
@@ -66,8 +70,12 @@ public final class RegistryAccessContainer extends RegistryOpsContainer implemen
 		this.cachedRegistryTags = new Reference2ObjectOpenHashMap<>();
 	}
 
-	public RegistryAccess.Frozen access() {
-		return access;
+	public Registry<Item> item() {
+		return lookupOrThrow(Registries.ITEM);
+	}
+
+	public Registry<Block> block() {
+		return lookupOrThrow(Registries.BLOCK);
 	}
 
 	public DamageSources damageSources() {
@@ -83,16 +91,13 @@ public final class RegistryAccessContainer extends RegistryOpsContainer implemen
 	}
 
 	// Currently this is the best way I can think of to have tags available at the time of recipe loading
-	public synchronized <T> void cacheTags(Registry<T> registry, Map<ResourceLocation, List<TagLoader.EntryWithSource>> map) {
-		var key1 = registry == null ? null : (ResourceKey) registry.key();
-
-		if (key1 == null) {
-			return;
-		}
+	@SuppressWarnings({"rawtypes", "unchecked"})
+	public synchronized <T> void cacheTags(Registry<T> registry, Map<Identifier, List<TagLoader.EntryWithSource>> map) {
+		ResourceKey key1 = registry.key();
 
 		try {
 			if (key1 == Registries.ITEM) {
-				cachedItemTags = Cast.to(new CachedItemTagLookup((Registry) registry, map));
+				cachedItemTags = Cast.to(new CachedItemTagLookup(Cast.to(registry), map));
 				cachedRegistryTags.put(key1, new CachedTagLookup.Entry(key1, registry, cachedItemTags));
 			} else if (key1 == Registries.BLOCK) {
 				cachedBlockTags = Cast.to(new CachedTagLookup<>(registry, map));
@@ -104,11 +109,11 @@ public final class RegistryAccessContainer extends RegistryOpsContainer implemen
 				cachedRegistryTags.put(key1, new CachedTagLookup.Entry(key1, registry, new CachedTagLookup<>(registry, map)));
 			}
 		} catch (Exception ex) {
-			ConsoleJS.SERVER.error("Error caching tags for " + key1, ex);
+			ScriptType.SERVER.console.error("Error caching tags for " + key1, ex);
 		}
 
 		if (DataExport.export != null) {
-			var loc = "tags/" + key1.location() + "/";
+			var loc = "tags/" + key1.identifier() + "/";
 
 			for (var entry : map.entrySet()) {
 				var list = new ArrayList<String>();
@@ -129,27 +134,33 @@ public final class RegistryAccessContainer extends RegistryOpsContainer implemen
 		}
 	}
 
-	private <T> RegistryWrapper<T> createRegistryWrapper(ResourceLocation id) {
+	private <T> RegistryWrapper<T> createRegistryWrapper(Identifier id) {
 		var key = ResourceKey.<T>createRegistryKey(id);
-		return new RegistryWrapper<>(access.registryOrThrow(key), ResourceKey.create(key, ID.UNKNOWN));
+		return new RegistryWrapper<>(access.lookup(key).orElseThrow(() -> new KubeRuntimeException("Unknown registry: " + id)), ResourceKey.create(key, ID.UNKNOWN));
 	}
 
-	public RegistryWrapper<?> wrapRegistry(ResourceLocation id) {
-		if (cachedRegistryWrappers == null) {
-			cachedRegistryWrappers = new HashMap<>();
-		}
-
+	public RegistryWrapper<?> wrapRegistry(Identifier id) {
 		return cachedRegistryWrappers.computeIfAbsent(id, this::createRegistryWrapper);
 	}
 
 	@Override
-	public <T> Map<ResourceLocation, Collection<Holder<T>>> getAllTags(ResourceKey<? extends Registry<T>> key) {
-		var cached = cachedRegistryTags.get(key);
+	public <T> boolean isTagLoaded(TagKey<T> key) {
+		var cached = cachedRegistryTags.get(key.registry());
+		return cached != null && cached.lookup().tagMap().containsKey(key.location());
+	}
 
-		if (cached != null) {
-			return (Map) cached.lookup().tagMap();
-		}
+	@Override
+	public RegistryAccess.Frozen registryAccess() {
+		return access;
+	}
 
-		return Map.of();
+	@Override
+	public <E> Optional<Registry<E>> lookup(ResourceKey<? extends Registry<? extends E>> registryKey) {
+		return access.lookup(registryKey);
+	}
+
+	@Override
+	public Stream<RegistryEntry<?>> registries() {
+		return access.registries();
 	}
 }

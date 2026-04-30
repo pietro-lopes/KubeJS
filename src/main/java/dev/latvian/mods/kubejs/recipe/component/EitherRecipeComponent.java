@@ -2,36 +2,41 @@ package dev.latvian.mods.kubejs.recipe.component;
 
 import com.mojang.datafixers.util.Either;
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.recipe.schema.RecipeSchemaStorage;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.util.OpsContainer;
 import dev.latvian.mods.rhino.type.TypeInfo;
+import net.minecraft.resources.ResourceKey;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
 @SuppressWarnings("OptionalIsPresent")
 public record EitherRecipeComponent<H, L>(RecipeComponent<H> left, RecipeComponent<L> right, Codec<Either<H, L>> codec, TypeInfo typeInfo) implements RecipeComponent<Either<H, L>> {
-	public static final RecipeComponentType<?> TYPE = RecipeComponentType.<EitherRecipeComponent<?, ?>>dynamic(KubeJS.id("either"), (type, ctx) -> RecordCodecBuilder.mapCodec(instance -> instance.group(
-		ctx.recipeComponentCodec().fieldOf("left").forGetter(EitherRecipeComponent::left),
-		ctx.recipeComponentCodec().fieldOf("right").forGetter(EitherRecipeComponent::right)
-	).apply(instance, EitherRecipeComponent::new)));
+	public static final ResourceKey<RecipeComponentType<?>> TYPE = RecipeComponentType.builtin("either");
+
+	public static final MapCodec<EitherRecipeComponent<?, ?>> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+		RecipeSchemaStorage.COMPONENT_CODEC.fieldOf("left").forGetter(EitherRecipeComponent::left),
+		RecipeSchemaStorage.COMPONENT_CODEC.fieldOf("right").forGetter(EitherRecipeComponent::right)
+	).apply(instance, EitherRecipeComponent::new));
 
 	public EitherRecipeComponent(RecipeComponent<H> left, RecipeComponent<L> right) {
 		this(left, right, Codec.either(left.codec(), right.codec()), left.typeInfo().or(right.typeInfo()));
 	}
 
 	@Override
-	public RecipeComponentType<?> type() {
+	public ResourceKey<RecipeComponentType<?>> type() {
 		return TYPE;
 	}
 
 	@Override
-	public Either<H, L> wrap(RecipeScriptContext cx, Object from) {
+	public Either<H, L> wrap(RecipeScriptContext cx, @Nullable Object from) {
 		if (left.hasPriority(cx, from)) {
 			// if left has priority, only try to read left
 			var value = left.wrap(cx, from);
@@ -72,8 +77,8 @@ public record EitherRecipeComponent<H, L>(RecipeComponent<H> left, RecipeCompone
 				return Either.right(value);
 			}
 		} catch (Exception ex) {
-			ConsoleJS.SERVER.warn("Failed to read %s (left: %s)!".formatted(from, left), ex1);
-			ConsoleJS.SERVER.warn("Failed to read %s (right: %s)!".formatted(from, right), ex);
+			ScriptType.SERVER.console.warn("Failed to read %s (left: %s)!".formatted(from, left), ex1);
+			ScriptType.SERVER.console.warn("Failed to read %s (right: %s)!".formatted(from, right), ex);
 		}
 
 		throw new KubeRuntimeException("Failed to read %s as either %s or %s!".formatted(from, left, right)).source(cx.recipe().sourceLine);

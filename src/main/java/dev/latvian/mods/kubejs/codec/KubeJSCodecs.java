@@ -15,16 +15,17 @@ import dev.latvian.mods.kubejs.util.TimeJS;
 import dev.latvian.mods.rhino.type.ClassTypeInfo;
 import dev.latvian.mods.rhino.type.EnumTypeInfo;
 import dev.latvian.mods.rhino.type.TypeInfo;
-import net.minecraft.ResourceLocationException;
+import net.minecraft.IdentifierException;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.ExtraCodecs;
 import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.storage.loot.providers.number.NumberProvider;
 import net.minecraft.world.level.storage.loot.providers.number.NumberProviders;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.List;
@@ -42,14 +43,14 @@ public interface KubeJSCodecs {
 		}
 	}, Object::toString);
 
-	Codec<ResourceLocation> KUBEJS_ID = Codec.STRING.comapFlatMap(s -> {
+	Codec<Identifier> KUBEJS_ID = Codec.STRING.comapFlatMap(s -> {
 		try {
 			if (s.indexOf(':') == -1) {
 				return DataResult.success(KubeJS.id(s));
 			} else {
-				return DataResult.success(ResourceLocation.parse(s));
+				return DataResult.success(Identifier.parse(s));
 			}
-		} catch (ResourceLocationException ex) {
+		} catch (IdentifierException ex) {
 			return DataResult.error(() -> "Not a valid resource location: " + s + " " + ex.getMessage());
 		}
 	}, ID::reduceKjs).stable();
@@ -76,13 +77,13 @@ public interface KubeJSCodecs {
 		}
 	}, ClassTypeInfo::asClass);
 
-	Codec<ResourceKey<? extends Registry<?>>> REGISTRY_KEY = ResourceLocation.CODEC.xmap(ResourceKey::createRegistryKey, ResourceKey::location);
+	Codec<ResourceKey<? extends Registry<?>>> REGISTRY_KEY = Identifier.CODEC.xmap(ResourceKey::createRegistryKey, ResourceKey::identifier);
 
 	MapCodec<EntityType<?>> ENTITY_TYPE_FIELD = BuiltInRegistries.ENTITY_TYPE.byNameCodec().fieldOf("id");
 
 	Codec<Duration> DURATION = Codec.STRING.comapFlatMap(TimeJS::readDuration, Duration::toString);
 
-	Codec<ResourceKey<? extends Registry<?>>> REGISTRY_KEY_CODEC = ResourceLocation.CODEC.xmap(ResourceKey::createRegistryKey, ResourceKey::location);
+	Codec<ResourceKey<? extends Registry<?>>> REGISTRY_KEY_CODEC = Identifier.CODEC.xmap(ResourceKey::createRegistryKey, ResourceKey::identifier);
 
 	Codec<Map<String, JsonElement>> JSON_MAP = Codec.unboundedMap(Codec.STRING, ExtraCodecs.JSON);
 
@@ -95,7 +96,7 @@ public interface KubeJSCodecs {
 	Codec<Double> NON_NEGATIVE_DOUBLE = Codec.DOUBLE.validate(v -> v >= 0D ? DataResult.success(v) : DataResult.error(() -> "Value must be non-negative: " + v));
 	Codec<Double> POSITIVE_DOUBLE = Codec.DOUBLE.validate(v -> v > 0D ? DataResult.success(v) : DataResult.error(() -> "Value must be positive: " + v));
 
-	static <E> Codec<E> stringResolverCodec(Function<E, String> toStringFunction, Function<String, E> fromStringFunction) {
+	static <E> Codec<E> stringResolverCodec(Function<E, String> toStringFunction, Function<String, @Nullable E> fromStringFunction) {
 		return Codec.STRING.flatXmap(str -> Optional.ofNullable(fromStringFunction.apply(str))
 				.map(DataResult::success)
 				.orElseGet(() -> DataResult.error(() -> "Unknown element id: " + str)),
@@ -139,10 +140,8 @@ public interface KubeJSCodecs {
 		return listOfOrSelf(codec.listOf(), codec);
 	}
 
-	// TODO: Check if this is correct
 	static <T> Codec<List<T>> listOfOrSelf(Codec<List<T>> listCodec, Codec<T> codec) {
 		return Codec.either(listCodec, codec).xmap(either -> either.map(Function.identity(), List::of), Either::left);
-		// return Codec.withAlternative(listCodec, codec.xmap(List::of, List::getFirst));
 	}
 
 	static <V> Codec<V> or(List<Codec<? extends V>> codecs) {

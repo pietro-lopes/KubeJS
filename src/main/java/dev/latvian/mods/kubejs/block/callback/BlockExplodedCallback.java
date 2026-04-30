@@ -4,13 +4,10 @@ import dev.latvian.mods.kubejs.level.LevelBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import org.jetbrains.annotations.Nullable;
-
-import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 public class BlockExplodedCallback {
 	protected final LevelBlock block;
@@ -37,6 +34,7 @@ public class BlockExplodedCallback {
 		return explosion;
 	}
 
+	@Nullable
 	public Entity getCause() {
 		return explosion.getDirectSourceEntity();
 	}
@@ -50,7 +48,4 @@ public class BlockExplodedCallback {
 		return explosion.radius();
 	}
 
-	public List<Player> getAffectedPlayers() {
-		return explosion.getHitPlayers().keySet().stream().toList();
-	}
 }

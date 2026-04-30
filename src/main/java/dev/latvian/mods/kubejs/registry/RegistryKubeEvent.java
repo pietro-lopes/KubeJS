@@ -4,9 +4,9 @@ import dev.latvian.mods.kubejs.DevProperties;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.event.EventResult;
 import dev.latvian.mods.kubejs.event.KubeStartupEvent;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.script.SourceLine;
-import dev.latvian.mods.kubejs.util.KubeResourceLocation;
+import dev.latvian.mods.kubejs.util.KubeIdentifier;
 import dev.latvian.mods.rhino.Context;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
@@ -26,7 +26,7 @@ public class RegistryKubeEvent<T> implements KubeStartupEvent, AdditionalObjectR
 		this.created = new LinkedList<>();
 	}
 
-	public BuilderBase<? extends T> create(Context cx, KubeResourceLocation id, KubeResourceLocation type) {
+	public BuilderBase<? extends T> create(Context cx, KubeIdentifier id, KubeIdentifier type) {
 		var sourceLine = SourceLine.of(cx);
 		var t = builderInfo.namedType(type.wrapped());
 
@@ -50,12 +50,12 @@ public class RegistryKubeEvent<T> implements KubeStartupEvent, AdditionalObjectR
 		return b;
 	}
 
-	public BuilderBase<? extends T> create(Context cx, KubeResourceLocation id) {
+	public BuilderBase<? extends T> create(Context cx, KubeIdentifier id) {
 		var sourceLine = SourceLine.of(cx);
 		var t = builderInfo.defaultType();
 
 		if (t == null) {
-			throw new KubeRuntimeException("Registry '" + registryKey.location() + "' doesn't have a default type registered!").source(sourceLine);
+			throw new KubeRuntimeException("Registry '" + registryKey.identifier() + "' doesn't have a default type registered!").source(sourceLine);
 		}
 
 		var b = t.factory().createBuilder(id.wrapped());
@@ -72,7 +72,7 @@ public class RegistryKubeEvent<T> implements KubeStartupEvent, AdditionalObjectR
 		return b;
 	}
 
-	public CustomBuilderObject createCustom(Context cx, KubeResourceLocation id, Supplier<Object> object) {
+	public CustomBuilderObject createCustom(Context cx, KubeIdentifier id, Supplier<Object> object) {
 		var sourceLine = SourceLine.of(cx);
 
 		if (object == null) {
@@ -102,17 +102,17 @@ public class RegistryKubeEvent<T> implements KubeStartupEvent, AdditionalObjectR
 
 	private <R> void addBuilder(BuilderBase<? extends R> builder) {
 		if (builder == null) {
-			throw new IllegalArgumentException("Can't add null builder in registry '" + builder.registryKey.location() + "'!");
+			throw new IllegalArgumentException("Can't add null builder in registry '" + builder.registryKey.identifier() + "'!");
 		}
 
 		if (DevProperties.get().logRegistryEventObjects) {
-			ConsoleJS.STARTUP.info("~ " + builder.registryKey.location() + " | " + builder.id);
+			ScriptType.STARTUP.console.info("~ " + builder.registryKey.identifier() + " | " + builder.id);
 		}
 
 		var objStorage = RegistryObjectStorage.of(builder.registryKey);
 
 		if (objStorage.objects.containsKey(builder.id)) {
-			throw new IllegalArgumentException("Duplicate key '" + builder.id + "' in registry '" + builder.registryKey.location() + "'!");
+			throw new IllegalArgumentException("Duplicate key '" + builder.id + "' in registry '" + builder.registryKey.identifier() + "'!");
 		}
 
 		objStorage.objects.put(builder.id, (BuilderBase) builder);

@@ -1,7 +1,6 @@
 package dev.latvian.mods.kubejs.core;
 
 import com.mojang.authlib.GameProfile;
-import dev.latvian.mods.kubejs.item.ItemHandlerUtils;
 import dev.latvian.mods.kubejs.player.KubeJSInventoryListener;
 import dev.latvian.mods.kubejs.player.PlayerStatsJS;
 import dev.latvian.mods.kubejs.stages.Stages;
@@ -17,7 +16,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.common.util.FakePlayer;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import javax.annotation.Nonnull;
 
@@ -64,7 +63,7 @@ public interface PlayerKJS extends LivingEntityKJS, DataSenderKJS, WithAttachedD
 	@Override
 	@Info("Gets the player's username.")
 	default String kjs$getUsername() {
-		return kjs$self().getGameProfile().getName();
+		return kjs$self().getGameProfile().name();
 	}
 
 	default InventoryKJS kjs$getInventory() {
@@ -82,19 +81,19 @@ public interface PlayerKJS extends LivingEntityKJS, DataSenderKJS, WithAttachedD
 	}
 
 	default void kjs$give(ItemStack item) {
-		ItemHandlerUtils.giveItemToPlayer(kjs$self(), item, -1);
+		kjs$self().getInventory().add(item);
 	}
 
 	default void kjs$giveInHand(ItemStack item) {
-		ItemHandlerUtils.giveItemToPlayer(kjs$self(), item, kjs$getSelectedSlot());
+		kjs$self().getInventory().add(kjs$getSelectedSlot(), item);
 	}
 
 	default int kjs$getSelectedSlot() {
-		return kjs$self().getInventory().selected;
+		return kjs$self().getInventory().getSelectedSlot();
 	}
 
 	default void kjs$setSelectedSlot(int index) {
-		kjs$self().getInventory().selected = Mth.clamp(index, 0, 8);
+		kjs$self().getInventory().setSelectedSlot(Mth.clamp(index, 0, 8));
 	}
 
 	default ItemStack kjs$getMouseItem() {
@@ -107,7 +106,7 @@ public interface PlayerKJS extends LivingEntityKJS, DataSenderKJS, WithAttachedD
 
 	@Override
 	default void kjs$setStatusMessage(Component message) {
-		kjs$self().displayClientMessage(message, true);
+		kjs$self().sendOverlayMessage(message);
 	}
 
 	@Override
@@ -183,7 +182,7 @@ public interface PlayerKJS extends LivingEntityKJS, DataSenderKJS, WithAttachedD
 	}
 
 	default void kjs$addItemCooldown(Item item, int ticks) {
-		kjs$self().getCooldowns().addCooldown(item, ticks);
+		kjs$self().getCooldowns().addCooldown(item.getDefaultInstance(), ticks);
 	}
 
 	default KubeJSInventoryListener kjs$getInventoryChangeListener() {

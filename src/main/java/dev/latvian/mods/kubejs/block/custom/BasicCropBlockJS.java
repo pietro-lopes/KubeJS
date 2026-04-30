@@ -18,10 +18,11 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
 
 public class BasicCropBlockJS extends CropBlock {
 	private final CropBlockBuilder builder;
-	private IntegerProperty ageProperty;
+	private @Nullable IntegerProperty ageProperty;
 
 	public BasicCropBlockJS(CropBlockBuilder builder) {
 		super(builder.createProperties().sound(SoundType.CROP).randomTicks());
@@ -76,7 +77,7 @@ public class BasicCropBlockJS extends CropBlock {
 		if (builder.fertilizerCallback == null) {
 			super.growCrops(level, blockPos, blockState);
 		} else {
-			int effect = builder.fertilizerCallback.applyAsInt(new RandomTickCallback(level.kjs$getBlock(blockPos).cache(blockState), level.random));
+			int effect = builder.fertilizerCallback.applyAsInt(new RandomTickCallback(level.kjs$getBlock(blockPos).cache(blockState), level.getRandom()));
 			if (effect > 0) {
 				level.setBlock(blockPos, this.getStateForAge(Integer.min(getAge(blockState) + effect, getMaxAge())), 2);
 			}

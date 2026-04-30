@@ -3,27 +3,40 @@ package dev.latvian.mods.kubejs.core;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DynamicOps;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
-import dev.latvian.mods.kubejs.ingredient.WildcardIngredient;
+import dev.latvian.mods.kubejs.holder.KubeJSHolderSet;
+import dev.latvian.mods.kubejs.ingredient.CreativeTabIngredient;
 import dev.latvian.mods.kubejs.item.ItemPredicate;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.IngredientWrapper;
-import dev.latvian.mods.kubejs.plugin.builtin.wrapper.SizedIngredientWrapper;
 import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.ItemMatch;
 import dev.latvian.mods.kubejs.recipe.match.Replaceable;
+import dev.latvian.mods.kubejs.util.Cast;
+import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.kubejs.util.WithCodec;
 import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
+import net.minecraft.core.Holder;
+import net.minecraft.core.HolderSet;
+import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.nbt.Tag;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.neoforged.neoforge.common.crafting.CompoundIngredient;
+import net.neoforged.neoforge.common.crafting.DataComponentIngredient;
 import net.neoforged.neoforge.common.crafting.DifferenceIngredient;
 import net.neoforged.neoforge.common.crafting.IntersectionIngredient;
 import net.neoforged.neoforge.common.crafting.SizedIngredient;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.registries.holdersets.AnyHolderSet;
+import net.neoforged.neoforge.registries.holdersets.OrHolderSet;
+import org.jspecify.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 
 @RemapPrefixForJS("kjs$")
 public interface IngredientKJS extends ItemPredicate, Replaceable, WithCodec, ItemMatch {
@@ -33,15 +46,17 @@ public interface IngredientKJS extends ItemPredicate, Replaceable, WithCodec, It
 
 	@Override
 	default ItemStack[] kjs$getStackArray() {
-		return kjs$self().getItems();
+		return kjs$self().items()
+			.map(ItemStack::new)
+			.toArray(ItemStack[]::new);
 	}
 
 	default Ingredient kjs$and(Ingredient ingredient) {
-		return ingredient == Ingredient.EMPTY ? kjs$self() : this == Ingredient.EMPTY ? ingredient : IntersectionIngredient.of(kjs$self(), ingredient);
+		return IntersectionIngredient.of(kjs$self(), ingredient);
 	}
 
 	default Ingredient kjs$or(Ingredient ingredient) {
-		return ingredient == Ingredient.EMPTY ? kjs$self() : this == Ingredient.EMPTY ? ingredient : CompoundIngredient.of(kjs$self(), ingredient);
+		return CompoundIngredient.of(kjs$self(), ingredient);
 	}
 
 	default Ingredient kjs$except(Ingredient subtracted) {
@@ -49,10 +64,6 @@ public interface IngredientKJS extends ItemPredicate, Replaceable, WithCodec, It
 	}
 
 	default SizedIngredient kjs$asStack() {
-		if (kjs$self().isEmpty()) {
-			return SizedIngredientWrapper.empty;
-		}
-
 		return new SizedIngredient(kjs$self(), 1);
 	}
 
@@ -62,10 +73,9 @@ public interface IngredientKJS extends ItemPredicate, Replaceable, WithCodec, It
 
 	@Override
 	default boolean kjs$isWildcard() {
-		return kjs$self().getCustomIngredient() == WildcardIngredient.INSTANCE;
+		return kjs$self().values instanceof AnyHolderSet<?>;
 	}
 
-	@Override
 	default Ingredient kjs$asIngredient() {
 		return kjs$self();
 	}
@@ -101,23 +111,15 @@ public interface IngredientKJS extends ItemPredicate, Replaceable, WithCodec, It
 
 	@Override
 	default boolean matches(RecipeMatchContext cx, Ingredient in, boolean exact) {
-		if (in == Ingredient.EMPTY) {
-			return false;
-		}
-
 		if (exact) {
-			var t1 = IngredientWrapper.tagKeyOf(kjs$self());
-			var t2 = IngredientWrapper.tagKeyOf(in);
-
-			if (t1 != null && t2 != null) {
-				return t1 == t2;
-			} else {
-				return equals(in);
-			}
+			return Objects.equals(kjs$self(), in);
 		}
 
 		try {
-			for (var stack : in.getItems()) {
+			var items = in.items()
+				.map(ItemStack::new)
+				.toArray(ItemStack[]::new);
+			for (var stack : items) {
 				if (test(stack)) {
 					return true;
 				}
@@ -134,25 +136,57 @@ public interface IngredientKJS extends ItemPredicate, Replaceable, WithCodec, It
 		return IngredientWrapper.tagKeyOf(kjs$self());
 	}
 
-	default boolean kjs$containsAnyTag() {
-		return IngredientWrapper.containsAnyTag(kjs$self());
+	@SuppressWarnings({"rawtypes", "unchecked"})
+	private static @Nullable String setToString(HolderSet<Item> in, DataComponentPatch components, @Nullable DynamicOps<Tag> ops) {
+		Function<Holder<?>, String> holderToString = holder ->
+			new ItemStack(Cast.to(holder), 1, components).kjs$toItemString0(ops);
+		return switch (in) {
+			case HolderSet.Direct direct -> {
+				List<String> list = direct.stream().map(holderToString).toList();
+				yield list.size() == 1 ? list.getFirst() : list.toString();
+			}
+			case HolderSet.Named<?> tag -> "#" + ID.reduce(tag.key().location());
+			case OrHolderSet<?> or -> {
+				List<String> children = new ArrayList<>();
+				for (HolderSet child : or.getComponents()) {
+					var result = setToString(child, components, ops);
+					if (result == null) {
+						yield null;
+					}
+
+					children.add(result);
+				}
+				yield children.size() == 1 ? children.getFirst() : children.toString();
+			}
+			case AnyHolderSet<?> any -> "*";
+			case KubeJSHolderSet kjs -> kjs.kjs$toIngredientString(holderToString);
+			default -> null;
+		};
 	}
 
 	default String kjs$toIngredientString(@Nullable DynamicOps<Tag> ops) {
 		var in = kjs$self();
 
-		if (in.isEmpty()) {
-			return "air";
+		switch (in.getCustomIngredient()) {
+			case DataComponentIngredient dci -> {
+				var string = setToString(dci.itemSet(), dci.components(), ops);
+				if (string != null) {
+					return string;
+				}
+			}
+			case null -> {
+				var string = setToString(in.values, DataComponentPatch.EMPTY, ops);
+				if (string != null) {
+					return string;
+				}
+			}
+			case CreativeTabIngredient(var tab) -> {
+				return "%" + tab;
+			}
+			default -> {
+			}
 		}
 
-		var items = kjs$getStackArray();
-
-		if (items.length == 0) {
-			return "air";
-		} else if (items.length == 1) {
-			return items[0].kjs$toItemString0(null);
-		} else {
-			return Ingredient.CODEC.encodeStart(ops, in).getOrThrow().toString();
-		}
+		return Ingredient.CODEC.encodeStart(ops, in).getOrThrow().toString();
 	}
 }

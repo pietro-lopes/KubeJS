@@ -7,7 +7,7 @@ import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.rhino.util.ReturnsSelf;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
@@ -19,14 +19,13 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.DirectionProperty;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,10 +35,10 @@ import java.util.Map;
 @ReturnsSelf
 // Cardinal blocks that can face any horizontal direction (NSEW).
 public class CardinalBlockBuilder extends BlockBuilder {
-	private static final ResourceLocation MODEL = ResourceLocation.withDefaultNamespace("block/orientable");
-	private static final ResourceLocation BOTTOM_MODEL = ResourceLocation.withDefaultNamespace("block/orientable_with_bottom");
+	private static final Identifier MODEL = Identifier.withDefaultNamespace("block/orientable");
+	private static final Identifier BOTTOM_MODEL = Identifier.withDefaultNamespace("block/orientable_with_bottom");
 
-	public CardinalBlockBuilder(ResourceLocation i) {
+	public CardinalBlockBuilder(Identifier i) {
 		super(i);
 	}
 
@@ -81,7 +80,7 @@ public class CardinalBlockBuilder extends BlockBuilder {
 	}
 
 	public static class CardinalKubeBlock extends BasicKubeBlock {
-		public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+		public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
 		public final Map<Direction, VoxelShape> shapes = new HashMap<>();
 
 		public CardinalKubeBlock(BlockBuilder p) {
@@ -107,13 +106,13 @@ public class CardinalBlockBuilder extends BlockBuilder {
 		}
 
 		@Override
-		protected void createBlockStateDefinition(@NotNull StateDefinition.Builder<Block, BlockState> builder) {
+		protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
 			builder.add(FACING);
 			super.createBlockStateDefinition(builder);
 		}
 
 		@Override
-		public BlockState getStateForPlacement(@NotNull BlockPlaceContext context) {
+		public BlockState getStateForPlacement(BlockPlaceContext context) {
 			var state = defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
 
 			if (blockBuilder.canBeWaterlogged()) {
@@ -134,6 +133,7 @@ public class CardinalBlockBuilder extends BlockBuilder {
 		}
 	}
 
+	@SuppressWarnings("DataFlowIssue") // safe
 	public static class WithEntity extends CardinalKubeBlock implements EntityBlock {
 		public WithEntity(BlockBuilder p) {
 			super(p);

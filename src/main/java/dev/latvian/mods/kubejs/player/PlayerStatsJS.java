@@ -1,7 +1,7 @@
 package dev.latvian.mods.kubejs.player;
 
 import dev.latvian.mods.rhino.util.HideFromJS;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.stats.Stat;
 import net.minecraft.stats.Stats;
 import net.minecraft.stats.StatsCounter;
@@ -9,6 +9,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
+import org.jspecify.annotations.Nullable;
 
 public class PlayerStatsJS {
 	public final Player player;
@@ -19,11 +20,12 @@ public class PlayerStatsJS {
 		statFile = s;
 	}
 
-	public static Stat<?> wrapStat(Object o) {
+	@Nullable
+	public static Stat<?> wrapStat(@Nullable Object o) {
 		return switch (o) {
 			case Stat<?> s -> s;
-			case ResourceLocation rl -> Stats.CUSTOM.get(rl);
-			case CharSequence cs -> Stats.CUSTOM.get(ResourceLocation.parse(cs.toString()));
+			case Identifier rl -> Stats.CUSTOM.get(rl);
+			case CharSequence cs -> Stats.CUSTOM.get(Identifier.parse(cs.toString()));
 			case null, default -> null;
 		};
 	}
@@ -33,7 +35,7 @@ public class PlayerStatsJS {
 	}
 
 	@HideFromJS // To prevent ambiguity. The type wrapper should automatically wrap RL's to Stats using #statOf if you wish to grab a stat by RL from a script
-	public int get(ResourceLocation rl) {
+	public int get(Identifier rl) {
 		return get(Stats.CUSTOM.get(rl));
 	}
 

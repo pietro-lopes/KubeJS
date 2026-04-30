@@ -1,34 +1,30 @@
 package dev.latvian.mods.kubejs.holder;
 
-import dev.latvian.mods.kubejs.core.RegistryObjectKJS;
 import dev.latvian.mods.kubejs.script.KubeJSContext;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.kubejs.util.RegExpKJS;
 import dev.latvian.mods.rhino.Context;
-import dev.latvian.mods.rhino.regexp.NativeRegExp;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.holdersets.OrHolderSet;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 public interface HolderWrapper {
 	TypeInfo HOLDER = TypeInfo.of(Holder.class);
 	TypeInfo HOLDER_SET = TypeInfo.of(HolderSet.class);
 
-	static Holder<?> wrap(KubeJSContext cx, Object from, TypeInfo param) {
+	static Holder<?> wrap(KubeJSContext cx, @Nullable Object from, TypeInfo param) {
 		if (from instanceof Holder<?> h) {
 			return h;
 		} else if (from == null) {
@@ -44,7 +40,7 @@ public interface HolderWrapper {
 				var baseClass = cx.lookupRegistryType(param, from).baseClass();
 
 				if (!baseClass.isInstance(from)) {
-					throw Context.reportRuntimeError("Can't interpret '" + from + "' as Holder: can't cast object to '" + baseClass.getName() + "' of " + registry.key().location(), cx);
+					throw Context.reportRuntimeError("Can't interpret '" + from + "' as Holder: can't cast object to '" + baseClass.getName() + "' of " + registry.key().identifier(), cx);
 				}
 			}
 
@@ -52,7 +48,7 @@ public interface HolderWrapper {
 		}
 
 		var id = ID.mc(from);
-		var holder = registry.getHolder(id);
+		var holder = registry.get(id);
 		return holder.isEmpty() ? DeferredHolder.create(registry.key(), id) : holder.get();
 	}
 
@@ -67,9 +63,8 @@ public interface HolderWrapper {
 			throw Context.reportRuntimeError("Can't interpret '" + from + "' as a Reference Holder: cannot obtain its registry id", cx);
 		}
 
-		var registry = cx.lookupRegistry(param, from);
-
-		return Holder.Reference.createStandAlone(Cast.to(registry.holderOwner()), h.getKey()); // Only null with direct holders
+		//noinspection DataFlowIssue
+		return Holder.Reference.createStandAlone(Cast.to(cx.lookupRegistry(param, from)), h.getKey()); // Only null with direct holders
 	}
 
 	static HolderSet<?> wrapSet(KubeJSContext cx, Object from, TypeInfo param) {
@@ -119,35 +114,26 @@ public interface HolderWrapper {
 
 	@Nullable
 	static <T> HolderSet<T> wrapSimpleSet(Registry<T> registry, Object from) {
-		return switch (from) {
-			case HolderSet set -> set;
-			case Holder holder when holder.canSerializeIn(registry.holderOwner()) -> HolderSet.direct(holder);
-			case NativeRegExp regex -> RegExHolderSet.of(registry.asLookup(), RegExpKJS.wrap(regex));
-			case Pattern regex -> RegExHolderSet.of(registry.asLookup(), regex);
-			case RegistryObjectKJS registered -> wrapSimpleSet(registry, registered.kjs$asHolder());
-			case TagKey tag when tag.isFor(registry.key()) -> orEmpty(registry.getTag(tag));
-			case ResourceKey<?> key when key.isFor(registry.key()) -> orEmpty(key.cast(registry.key())
-				.flatMap(registry::getHolder)
-				.map(HolderSet::direct));
-			case ResourceLocation id -> orEmpty(registry.getHolder(id).map(HolderSet::direct));
-			case CharSequence cs when cs.isEmpty() -> HolderSet.empty();
-			case CharSequence cs -> {
-				var s = cs.toString();
-				yield switch (s.charAt(0)) {
-					case '@' -> NamespaceHolderSet.of(registry.asLookup(), s.substring(1));
-					case '#' -> {
-						var tagKey = TagKey.create(registry.key(), ResourceLocation.parse(s.substring(1)));
-						yield registry.getOrCreateTag(tagKey);
-					}
-					case '/' -> wrapSimpleSet(registry, RegExpKJS.wrap(from));
-					default -> ResourceLocation.read(s)
-						.result()
-						.map(id -> wrapSimpleSet(registry, id))
-						.orElse(null);
-				};
+		var regex = RegExpKJS.wrap(from);
+
+		if (regex != null) {
+			return new RegExHolderSet<>(registry.filterElements(t -> true), regex);
+		}
+
+		if (from instanceof CharSequence) {
+			var s = from.toString();
+
+			if (s.isEmpty()) {
+				return HolderSet.empty();
+			} else if (s.charAt(0) == '@') {
+				return new NamespaceHolderSet<>(registry.filterElements(t -> true), s.substring(1));
+			} else if (s.charAt(0) == '#') {
+				var tagKey = TagKey.create(registry.key(), Identifier.parse(s.substring(1)));
+				return registry.get(tagKey).get();
 			}
-			case null, default -> null;
-		};
+		}
+
+		return null;
 	}
 
 	@SuppressWarnings("all")

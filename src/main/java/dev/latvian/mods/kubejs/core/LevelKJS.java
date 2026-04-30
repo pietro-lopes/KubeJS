@@ -13,19 +13,19 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.projectile.FireworkRocketEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.Fireworks;
-import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.storage.ServerLevelData;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Consumer;
 
@@ -82,14 +82,14 @@ public interface LevelKJS extends WithAttachedData<Level>, ScriptTypeHolder, Ent
 	}
 
 	@Override
-	default void kjs$setActivePostShader(@Nullable ResourceLocation id) {
+	default void kjs$setActivePostShader(@Nullable Identifier id) {
 		for (var entity : kjs$self().players()) {
 			entity.kjs$setActivePostShader(id);
 		}
 	}
 
-	default ResourceLocation kjs$getDimension() {
-		return kjs$self().dimension().location();
+	default Identifier kjs$getDimension() {
+		return kjs$self().dimension().identifier();
 	}
 
 	default boolean kjs$isOverworld() {
@@ -114,17 +114,22 @@ public interface LevelKJS extends WithAttachedData<Level>, ScriptTypeHolder, Ent
 		return new CachedLevelBlock(entity.getLevel(), entity.getBlockPos()).cache(entity).cache(entity.getBlockState());
 	}
 
-	default Explosion kjs$explode(double x, double y, double z, ExplosionProperties properties) {
-		return properties.explode(kjs$self(), x, y, z);
+	default void kjs$explode(double x, double y, double z, ExplosionProperties properties) {
+		properties.explode(kjs$self(), x, y, z);
 	}
 
 	@Nullable
 	default Entity kjs$createEntity(EntityType<?> type) {
-		return type.create(kjs$self());
+		return type.create(kjs$self(), EntitySpawnReason.COMMAND);
+	}
+
+	@Nullable
+	default Entity kjs$createEntity(EntityType<?> type, EntitySpawnReason reason) {
+		return type.create(kjs$self(), reason);
 	}
 
 	default void spawnEntity(EntityType<?> type, Consumer<Entity> callback) {
-		var entity = type.create(kjs$self());
+		var entity = type.create(kjs$self(), EntitySpawnReason.COMMAND);
 
 		if (entity != null) {
 			callback.accept(entity);
@@ -155,11 +160,11 @@ public interface LevelKJS extends WithAttachedData<Level>, ScriptTypeHolder, Ent
 			double d4 = speed * vz;
 
 			try {
-				level.addParticle(options, overrideLimiter, x, y, z, d0, d2, d4);
-			} catch (Throwable var17) {
+				level.addParticle(options, overrideLimiter, false, x, y, z, d0, d2, d4);
+			} catch (Throwable ignored) {
 			}
 		} else {
-			var random = level.random;
+			var random = level.getRandom();
 
 			for (int i = 0; i < count; ++i) {
 				double ox = random.nextGaussian() * vx;
@@ -170,8 +175,8 @@ public interface LevelKJS extends WithAttachedData<Level>, ScriptTypeHolder, Ent
 				double d8 = random.nextGaussian() * speed;
 
 				try {
-					level.addParticle(options, overrideLimiter, x + ox, y + oy, z + oz, d6, d7, d8);
-				} catch (Throwable var16) {
+					level.addParticle(options, overrideLimiter, false, x + ox, y + oy, z + oz, d6, d7, d8);
+				} catch (Throwable ignored) {
 					return;
 				}
 			}
@@ -179,8 +184,8 @@ public interface LevelKJS extends WithAttachedData<Level>, ScriptTypeHolder, Ent
 	}
 
 	default void kjs$spawnLightning(double x, double y, double z, boolean visualOnly, @Nullable ServerPlayer cause) {
-		var e = EntityType.LIGHTNING_BOLT.create(kjs$self());
-		e.moveTo(x, y, z);
+		var e = EntityType.LIGHTNING_BOLT.create(kjs$self(), EntitySpawnReason.COMMAND);
+		e.snapTo(x, y, z);
 		e.setCause(cause);
 		e.setVisualOnly(visualOnly);
 		kjs$self().addFreshEntity(e);

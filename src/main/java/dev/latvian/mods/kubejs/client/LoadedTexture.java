@@ -4,9 +4,9 @@ import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.KubeJSPaths;
 import dev.latvian.mods.kubejs.color.KubeColor;
 import it.unimi.dsi.fastutil.ints.Int2IntArrayMap;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
@@ -21,7 +21,7 @@ import java.util.Map;
 public class LoadedTexture {
 	public static final LoadedTexture EMPTY = new LoadedTexture(0, 0, new int[0], null);
 
-	public static LoadedTexture load(ResourceLocation id) {
+	public static LoadedTexture load(Identifier id) {
 		try {
 			var path = KubeJSPaths.ASSETS.resolve(id.getNamespace() + "/textures/" + id.getPath() + ".png");
 
@@ -31,11 +31,11 @@ public class LoadedTexture {
 					return new LoadedTexture(ImageIO.read(in), Files.exists(metaPath) ? Files.readAllBytes(metaPath) : null);
 				}
 			} else if (id.getNamespace().equals(KubeJS.MOD_ID)) {
-				var path1 = KubeJS.thisMod.getModInfo().getOwningFile().getFile().findResource("assets", "kubejs", "textures", id.getPath() + ".png");
+				var path1 = KubeJS.thisMod.getModInfo().getOwningFile().getFile().getFilePath().resolve("assets", "kubejs", "textures", id.getPath() + ".png");
 
 				if (Files.exists(path1)) {
 					try (var in = new BufferedInputStream(Files.newInputStream(path1))) {
-						var metaPath = KubeJS.thisMod.getModInfo().getOwningFile().getFile().findResource("assets", "kubejs", "textures", id.getPath() + ".png.mcmeta");
+						var metaPath = KubeJS.thisMod.getModInfo().getOwningFile().getFile().getFilePath().resolve("assets", "kubejs", "textures", id.getPath() + ".png.mcmeta");
 						return new LoadedTexture(ImageIO.read(in), Files.exists(metaPath) ? Files.readAllBytes(metaPath) : null);
 					}
 				}
@@ -50,16 +50,16 @@ public class LoadedTexture {
 	public final int width;
 	public final int height;
 	public final int[] pixels;
-	public final byte[] mcmeta;
+	public final byte @Nullable [] mcmeta;
 
-	public LoadedTexture(int width, int height, int[] pixels, @Nullable byte[] mcmeta) {
+	public LoadedTexture(int width, int height, int[] pixels, byte @Nullable [] mcmeta) {
 		this.width = width;
 		this.height = height;
 		this.pixels = pixels;
 		this.mcmeta = mcmeta;
 	}
 
-	public LoadedTexture(BufferedImage img, @Nullable byte[] mcmeta) {
+	public LoadedTexture(BufferedImage img, byte @Nullable [] mcmeta) {
 		this.width = img.getWidth();
 		this.height = img.getHeight();
 		this.pixels = new int[width * height];

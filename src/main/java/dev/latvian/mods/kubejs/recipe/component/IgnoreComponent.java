@@ -1,19 +1,19 @@
 package dev.latvian.mods.kubejs.recipe.component;
 
 import com.mojang.serialization.Codec;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
 import dev.latvian.mods.rhino.type.TypeInfo;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.ExtraCodecs;
+import org.jspecify.annotations.Nullable;
 
 public enum IgnoreComponent implements RecipeComponent<Object> {
 	INSTANCE;
 
-	public static final Codec<Object> CODEC = Codec.unit(INSTANCE);
-	public static final RecipeComponentType<Object> TYPE = RecipeComponentType.unit(KubeJS.id("ignore"), IgnoreComponent.INSTANCE);
+	private static final ResourceKey<RecipeComponentType<?>> TYPE = RecipeComponentType.builtin("ignore");
 
 	@Override
-	public RecipeComponentType<?> type() {
+	public ResourceKey<RecipeComponentType<?>> type() {
 		return TYPE;
 	}
 
@@ -28,7 +28,8 @@ public enum IgnoreComponent implements RecipeComponent<Object> {
 	}
 
 	@Override
-	public Object wrap(RecipeScriptContext cx, Object from) {
+	@Nullable
+	public Object wrap(RecipeScriptContext cx, @Nullable Object from) {
 		return from;
 	}
 
@@ -42,7 +43,7 @@ public enum IgnoreComponent implements RecipeComponent<Object> {
 	}
 
 	@Override
-	public boolean isEmpty(Object value) {
+	public boolean isEmpty(@Nullable Object value) {
 		return value == null;
 	}
 

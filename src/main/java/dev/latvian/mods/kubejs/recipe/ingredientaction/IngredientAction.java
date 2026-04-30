@@ -25,8 +25,9 @@ public interface IngredientAction {
 			}
 		}
 
-		if (stack.hasCraftingRemainingItem()) {
-			return stack.getCraftingRemainingItem();
+		var remainder = stack.getCraftingRemainder();
+		if (remainder != null) {
+			return remainder.create();
 		}
 
 		return ItemStack.EMPTY;

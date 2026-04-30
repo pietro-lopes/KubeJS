@@ -2,19 +2,22 @@ package dev.latvian.mods.kubejs.recipe.component;
 
 import com.google.gson.JsonArray;
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.codec.KubeJSCodecs;
 import dev.latvian.mods.kubejs.error.RecipeComponentTooLargeException;
 import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
+import dev.latvian.mods.kubejs.recipe.schema.RecipeSchemaStorage;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.IntBounds;
 import dev.latvian.mods.rhino.type.TypeInfo;
+import net.minecraft.resources.ResourceKey;
 import net.neoforged.neoforge.common.conditions.ConditionalOps;
 import net.neoforged.neoforge.common.util.NeoForgeExtraCodecs;
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
@@ -52,7 +55,7 @@ public record ListRecipeComponent<T>(
 		return new ListRecipeComponent<>(component, canWriteSelf, listTypeInfo, listCodec, conditional, bounds, spread, spreadWrap);
 	}
 
-	private static <L> @NotNull Optional<RecipeComponent<?>> wrapSpread(RecipeComponent<L> component, Optional<RecipeComponent<?>> spread) {
+	private static <L> @NonNull Optional<RecipeComponent<?>> wrapSpread(RecipeComponent<L> component, Optional<RecipeComponent<?>> spread) {
 		Optional<RecipeComponent<?>> spreadWrap = spread;
 
 		if (spread.isPresent()) {
@@ -63,16 +66,17 @@ public record ListRecipeComponent<T>(
 		return spreadWrap;
 	}
 
-	public static final RecipeComponentType<?> TYPE = RecipeComponentType.<ListRecipeComponent<?>>dynamic(KubeJS.id("list"), (type, ctx) -> RecordCodecBuilder.mapCodec(instance -> instance.group(
-		ctx.recipeComponentCodec().fieldOf("component").forGetter(dev.latvian.mods.kubejs.recipe.component.ListRecipeComponent::component),
-		Codec.BOOL.optionalFieldOf("can_write_self", false).forGetter(dev.latvian.mods.kubejs.recipe.component.ListRecipeComponent::canWriteSelf),
-		Codec.BOOL.optionalFieldOf("conditional", false).forGetter(dev.latvian.mods.kubejs.recipe.component.ListRecipeComponent::conditional),
-		IntBounds.MAP_CODEC.forGetter(dev.latvian.mods.kubejs.recipe.component.ListRecipeComponent::bounds),
-		ctx.recipeComponentCodec().optionalFieldOf("spread").forGetter(dev.latvian.mods.kubejs.recipe.component.ListRecipeComponent::spread)
-	).apply(instance, dev.latvian.mods.kubejs.recipe.component.ListRecipeComponent::create)));
+	public static final ResourceKey<RecipeComponentType<?>> TYPE = RecipeComponentType.builtin("list");
+	public static final MapCodec<ListRecipeComponent<?>> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+		RecipeSchemaStorage.COMPONENT_CODEC.fieldOf("component").forGetter(ListRecipeComponent::component),
+		Codec.BOOL.optionalFieldOf("can_write_self", false).forGetter(ListRecipeComponent::canWriteSelf),
+		Codec.BOOL.optionalFieldOf("conditional", false).forGetter(ListRecipeComponent::conditional),
+		IntBounds.MAP_CODEC.forGetter(ListRecipeComponent::bounds),
+		RecipeSchemaStorage.COMPONENT_CODEC.optionalFieldOf("spread").forGetter(ListRecipeComponent::spread)
+	).apply(instance, ListRecipeComponent::create));
 
 	@Override
-	public RecipeComponentType<?> type() {
+	public ResourceKey<RecipeComponentType<?>> type() {
 		return TYPE;
 	}
 
@@ -87,11 +91,11 @@ public record ListRecipeComponent<T>(
 	}
 
 	@Override
-	public boolean hasPriority(RecipeMatchContext cx, Object from) {
+	public boolean hasPriority(RecipeMatchContext cx, @Nullable Object from) {
 		return from instanceof Iterable<?> || from != null && from.getClass().isArray();
 	}
 
-	public static <T> List<T> wrap0(RecipeScriptContext cx, RecipeComponent<T> component, Object from) {
+	public static <T> List<T> wrap0(RecipeScriptContext cx, RecipeComponent<T> component, @Nullable Object from) {
 		if (from instanceof Iterable<?> iterable) {
 			int size;
 
@@ -127,7 +131,7 @@ public record ListRecipeComponent<T>(
 
 				return list;
 			}
-		} else if (from.getClass().isArray()) {
+		} else if (from != null && from.getClass().isArray()) {
 			int length = Array.getLength(from);
 
 			if (length == 0) {
@@ -147,7 +151,7 @@ public record ListRecipeComponent<T>(
 	}
 
 	@Override
-	public List<T> wrap(RecipeScriptContext cx, Object from) {
+	public List<T> wrap(RecipeScriptContext cx, @Nullable Object from) {
 		var spreadComponent = spread.orElse(null);
 
 		if (spreadComponent != null && spreadWrap.isPresent()) {

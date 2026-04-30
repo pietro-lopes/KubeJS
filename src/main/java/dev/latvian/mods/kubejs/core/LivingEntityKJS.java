@@ -12,7 +12,7 @@ import dev.latvian.mods.kubejs.typings.ThisIs;
 import dev.latvian.mods.rhino.util.HideFromJS;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.core.Holder;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
@@ -25,14 +25,14 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.behavior.BehaviorUtils;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 @RemapPrefixForJS("kjs$")
 public interface LivingEntityKJS extends EntityKJS {
-	ResourceLocation KJS_PLAYER_CUSTOM_SPEED = KubeJS.id("player.speed.modifier");
+	Identifier KJS_PLAYER_CUSTOM_SPEED = KubeJS.id("player.speed.modifier");
 
 	@Override
 	@HideFromJS
@@ -66,7 +66,7 @@ public interface LivingEntityKJS extends EntityKJS {
 		@Param(name = "hp", value = "The new maximum health of the entity.")
 	})
 	default void kjs$setMaxHealth(float hp) {
-		kjs$self().getAttribute(Attributes.MAX_HEALTH).setBaseValue(hp);
+		kjs$self().kjs$setAttributeBaseValue(Attributes.MAX_HEALTH, hp);
 	}
 
 	default boolean kjs$isUndead() {
@@ -150,10 +150,14 @@ public interface LivingEntityKJS extends EntityKJS {
 	}
 
 	default void kjs$damageEquipment(EquipmentSlot slot, int amount, Consumer<ItemStack> onBroken) {
+		if (!(kjs$self().level() instanceof ServerLevel serverLevel)) {
+			return;
+		}
+
 		var stack = kjs$self().getItemBySlot(slot);
 
 		if (!stack.isEmpty()) {
-			stack.hurtAndBreak(amount, (ServerLevel) kjs$self().level(), kjs$self(), item -> onBroken.accept(stack));
+			stack.hurtAndBreak(amount, serverLevel, kjs$self(), item -> onBroken.accept(stack));
 
 			if (stack.isEmpty()) {
 				kjs$self().setItemSlot(slot, ItemStack.EMPTY);
@@ -196,7 +200,7 @@ public interface LivingEntityKJS extends EntityKJS {
 	}
 
 	default void kjs$setDefaultMovementSpeed(double speed) {
-		kjs$self().getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(speed);
+		kjs$self().kjs$setAttributeBaseValue(Attributes.MOVEMENT_SPEED, speed);
 	}
 
 	default void kjs$setMovementSpeedAddition(double speed) {
@@ -228,7 +232,7 @@ public interface LivingEntityKJS extends EntityKJS {
 	}
 
 	default double kjs$getReachDistance() {
-		return kjs$self().getAttribute(Attributes.BLOCK_INTERACTION_RANGE).getValue();
+		return kjs$self().getAttributeValue(Attributes.BLOCK_INTERACTION_RANGE);
 	}
 
 	default KubeRayTraceResult kjs$rayTrace() {
@@ -263,7 +267,7 @@ public interface LivingEntityKJS extends EntityKJS {
 		}
 	}
 
-	default void kjs$modifyAttribute(Holder<Attribute> attribute, ResourceLocation id, double amount, AttributeModifier.Operation operation) {
+	default void kjs$modifyAttribute(Holder<Attribute> attribute, Identifier id, double amount, AttributeModifier.Operation operation) {
 		AttributeInstance instance = kjs$self().getAttribute(attribute);
 		if (instance != null) {
 			instance.removeModifier(id);
@@ -271,7 +275,7 @@ public interface LivingEntityKJS extends EntityKJS {
 		}
 	}
 
-	default void kjs$removeAttribute(Holder<Attribute> attribute, ResourceLocation id) {
+	default void kjs$removeAttribute(Holder<Attribute> attribute, Identifier id) {
 		AttributeInstance instance = kjs$self().getAttribute(attribute);
 		if (instance != null) {
 			instance.removeModifier(id);

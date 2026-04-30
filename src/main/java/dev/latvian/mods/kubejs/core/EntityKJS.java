@@ -1,6 +1,7 @@
 package dev.latvian.mods.kubejs.core;
 
 import com.mojang.authlib.GameProfile;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.latvian.mods.kubejs.entity.KubeRayTraceResult;
 import dev.latvian.mods.kubejs.level.LevelBlock;
 import dev.latvian.mods.kubejs.player.EntityArrayList;
@@ -20,28 +21,31 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.EndTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.commands.TeleportCommand;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
-import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Optional;
 import java.util.Set;
@@ -98,9 +102,12 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 	@Info(value = "Sends a message in chat to the entity.", params = {
 		@Param(name = "message", value = "A text component. It may be a string, which will be implicitly wrapped into a text component."),
 	})
+	// TODO: move to PlayerKJS? maybe split MessageSender?
 	@Override
 	default void kjs$tell(Component message) {
-		kjs$self().sendSystemMessage(message);
+		if (kjs$self() instanceof Player player) {
+			player.sendSystemMessage(message);
+		}
 	}
 
 	@Override
@@ -109,7 +116,7 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 	})
 	default void kjs$runCommand(String command) {
 		if (kjs$getLevel() instanceof ServerLevel level) {
-			level.getServer().getCommands().performPrefixedCommand(kjs$self().createCommandSourceStack(), command);
+			level.getServer().getCommands().performPrefixedCommand(kjs$self().createCommandSourceStackForNameResolution(level), command);
 		}
 	}
 
@@ -119,7 +126,7 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 	})
 	default void kjs$runCommandSilent(String command) {
 		if (kjs$getLevel() instanceof ServerLevel level) {
-			level.getServer().getCommands().performPrefixedCommand(kjs$self().createCommandSourceStack().withSuppressedOutput(), command);
+			level.getServer().getCommands().performPrefixedCommand(kjs$self().createCommandSourceStackForNameResolution(level).withSuppressedOutput(), command);
 		}
 	}
 
@@ -234,19 +241,6 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 		kjs$self().setDeltaMovement(m.x, m.y, z);
 	}
 
-	@Info(value = "Teleports an entity to specified coordinates.", params = {
-		@Param(name = "x", value = "The `x` target coordinate."),
-		@Param(name = "y", value = "The `y` target coordinate."),
-		@Param(name = "z", value = "The `z` target coordinate."),
-	})
-	default void kjs$teleportTo(double x, double y, double z) throws IllegalArgumentException {
-		Entity self = kjs$self();
-		if (!Level.isInSpawnableBounds(BlockPos.containing(x, y, z))) {
-			throw new IllegalArgumentException("The provided coordinates are out of bounds.");
-		}
-		kjs$self().teleportTo(x, y, z);
-	}
-
 	private void checkDestinationValidity(BlockPos blockPos, float yaw, float pitch) throws IllegalArgumentException {
 		if (!Level.isInSpawnableBounds(blockPos)) {
 			throw new IllegalArgumentException("The provided coordinates are out of bounds.");
@@ -281,17 +275,23 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 		float adjustedYaw = Mth.wrapDegrees(yaw);
 		float adjustedPitch = Mth.wrapDegrees(pitch);
 
-		boolean teleportSucceeded = self.teleportTo(level, x, y, z, Set.of(), adjustedYaw, adjustedPitch);
+		boolean teleportSucceeded = self.teleportTo(level, x, y, z, Set.of(), adjustedYaw, adjustedPitch, false);
 		if (!teleportSucceeded) {
 			return false;
 		}
 
-		if (self instanceof LivingEntity livingEntity && !livingEntity.isFallFlying()) {
-			livingEntity.setDeltaMovement(livingEntity.getDeltaMovement().multiply(1.0, 0.0, 1.0));
-			livingEntity.setOnGround(true);
-		}
-		if (self instanceof PathfinderMob pathfinderMob) {
-			pathfinderMob.getNavigation().stop();
+		try {
+			TeleportCommand.performTeleport(
+				kjs$self().createCommandSourceStackForNameResolution(level),
+				kjs$self(),
+				level,
+				x, y, z,
+				Set.of(),
+				yaw, pitch,
+				null
+			);
+		} catch (CommandSyntaxException e) {
+			throw new IllegalArgumentException(e.getRawMessage().getString());
 		}
 		return true;
 	}
@@ -304,7 +304,7 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 		@Param(name = "yaw", value = "The entity's target yaw."),
 		@Param(name = "pitch", value = "The entity's target pitch.")
 	})
-	default boolean kjs$teleportTo(ResourceLocation dimension, double x, double y, double z, float yaw, float pitch) throws IllegalArgumentException {
+	default boolean kjs$teleportTo(Identifier dimension, double x, double y, double z, float yaw, float pitch) throws IllegalArgumentException {
 		ServerLevel level = kjs$getServer().getLevel(ResourceKey.create(Registries.DIMENSION, dimension));
 
 		if (level == null) {
@@ -327,11 +327,11 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 	}
 
 	default void kjs$setPosition(LevelBlock block) {
-		kjs$teleportTo(block.getX(), block.getY(), block.getZ());
+		kjs$teleportTo(block.getDimension(), block.getX(), block.getY(), block.getZ(), kjs$self().getYRot(), kjs$self().getXRot());
 	}
 
 	default void kjs$setPositionAndRotation(double x, double y, double z, float yaw, float pitch) {
-		kjs$self().moveTo(x, y, z, yaw, pitch);
+		kjs$self().snapTo(x, y, z, yaw, pitch);
 	}
 
 	default void kjs$setPosition(double x, double y, double z) {
@@ -368,7 +368,7 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 		@Param(name = "teamName", value = "The name of the team to check.")
 	})
 	default boolean kjs$isOnScoreboardTeam(String teamName) {
-		Team team = kjs$self().getCommandSenderWorld().getScoreboard().getPlayerTeam(teamName);
+		Team team = kjs$self().level().getScoreboard().getPlayerTeam(teamName);
 		return team != null && kjs$self().isAlliedTo(team);
 	}
 
@@ -393,16 +393,25 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 	}
 
 	default CompoundTag kjs$getNbt() {
-		var nbt = new CompoundTag();
-		kjs$self().saveWithoutId(nbt);
-		return nbt;
+		var registries = kjs$self().level().registryAccess();
+		var problems = new ProblemReporter.Collector(() -> "kubejs");
+
+		var out = TagValueOutput.createWithContext(problems, registries);
+		kjs$self().saveWithoutId(out);
+		return out.buildResult();
 	}
 
 	default void kjs$setNbt(@Nullable CompoundTag nbt) {
-		if (nbt != null) {
-			kjs$self().load(nbt);
+		if (nbt == null) {
+			return;
 		}
+		var registries = kjs$self().level().registryAccess();
+		var problems = new ProblemReporter.Collector(() -> "kubejs");
+
+		var in = TagValueInput.create(problems, registries, nbt);
+		kjs$self().load(in);
 	}
+
 
 	default Entity kjs$mergeNbt(@Nullable CompoundTag tag) {
 		if (tag == null || tag.isEmpty()) {
@@ -411,13 +420,13 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 
 		var nbt = kjs$getNbt();
 
-		for (var k : tag.getAllKeys()) {
+		for (var k : tag.keySet()) {
 			var t = tag.get(k);
 
 			if (t == null || t == EndTag.INSTANCE) {
 				nbt.remove(k);
 			} else {
-				nbt.put(k, tag.get(k));
+				nbt.put(k, t);
 			}
 		}
 
@@ -433,7 +442,7 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 		@Param(name = "hp", value = "The amount of damage to deal."),
 	})
 	default boolean kjs$damage(float hp) {
-		return kjs$self().hurt(kjs$self().damageSources().generic(), hp);
+		return kjs$damage(hp, kjs$self().damageSources().generic());
 	}
 
 	@Info(value = "Damages an entity by a given amount of HP dealing a specific type of damage.", params = {
@@ -441,20 +450,21 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 		@Param(name = "source", value = "The damage source. It may be a string specifying a damage source, like `'minecraft:cramming'`.")
 	})
 	default boolean kjs$damage(float hp, DamageSource source) {
-		return kjs$self().hurt(source, hp);
+		if (kjs$getLevel() instanceof ServerLevel serverLevel) {
+			return kjs$self().hurtServer(serverLevel, source, hp);
+		}
+		return false;
 	}
 
-	// Alias to not break old scripts
-	@Info("Replaced by `entity.damage(hp)`")
 	@Deprecated
-	default boolean kjs$attack(float hp) {
-		return kjs$damage(hp);
+	default void kjs$attack(float hp) {
+		kjs$damage(hp);
 	}
 
 	@Info("Replaced by `entity.damage(hp, damageSource)`")
 	@Deprecated
-	default boolean kjs$attack(DamageSource source, float hp) {
-		return kjs$damage(hp, source);
+	default void kjs$attack(DamageSource source, float hp) {
+		kjs$damage(hp, source);
 	}
 
 	@Info("Measures the distance of entity to block at specified `BlockPos`.")
@@ -518,7 +528,7 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 	}
 
 	@Nullable
-	default Entity kjs$rayTraceEntity(double distance, Predicate<Entity> filter) {
+	default Entity kjs$rayTraceEntity(double distance, @Nullable Predicate<Entity> filter) {
 		double d0 = Double.MAX_VALUE;
 		Entity entity = null;
 
@@ -553,5 +563,14 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 	@Override
 	default ScriptType kjs$getScriptType() {
 		return kjs$getLevel().kjs$getScriptType();
+	}
+
+	@Nullable
+	default ItemEntity kjs$spawnAtLocation(ItemStack itemStack, Vec3 offset) {
+		if (kjs$getLevel() instanceof ServerLevel serverLevel) {
+			return kjs$self().spawnAtLocation(serverLevel, itemStack, offset);
+		}
+
+		return null;
 	}
 }

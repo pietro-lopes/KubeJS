@@ -4,8 +4,8 @@ import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.advancements.AdvancementNode;
 import net.minecraft.advancements.DisplayInfo;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.resources.Identifier;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Set;
 
@@ -15,7 +15,7 @@ public interface AdvancementNodeKJS {
 		return (AdvancementNode) this;
 	}
 
-	default ResourceLocation kjs$getId() {
+	default Identifier kjs$getId() {
 		return kjs$self().holder().id();
 	}
 

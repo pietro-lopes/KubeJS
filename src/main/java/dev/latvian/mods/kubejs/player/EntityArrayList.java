@@ -9,14 +9,14 @@ import net.minecraft.commands.arguments.selector.EntitySelector;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.Level;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -34,17 +34,6 @@ public class EntityArrayList extends ArrayList<Entity> implements MessageSenderK
 	public EntityArrayList(Iterable<? extends Entity> entities) {
 		this(entities instanceof Collection c ? c.size() : 4);
 		addAllIterable(entities);
-	}
-
-	/**
-	 * @deprecated polyfill for when EntityArrayList needed a Level, will be removed in a future version!
-	 */
-	@Deprecated(
-		forRemoval = true,
-		since = "7.2"
-	)
-	public EntityArrayList(Level level, Iterable<? extends Entity> entities) {
-		this(entities);
 	}
 
 	public void addAllIterable(Iterable<? extends Entity> entities) {
@@ -105,7 +94,7 @@ public class EntityArrayList extends ArrayList<Entity> implements MessageSenderK
 	}
 
 	@Override
-	public void kjs$setActivePostShader(@Nullable ResourceLocation id) {
+	public void kjs$setActivePostShader(@Nullable Identifier id) {
 		for (var entity : this) {
 			entity.kjs$setActivePostShader(id);
 		}
@@ -114,7 +103,7 @@ public class EntityArrayList extends ArrayList<Entity> implements MessageSenderK
 	@Info("Kills every entity in the list.")
 	public void kill() {
 		for (var entity : this) {
-			entity.kill();
+			entity.kill((ServerLevel) entity.level());
 		}
 	}
 

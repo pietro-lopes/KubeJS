@@ -25,10 +25,8 @@ import dev.latvian.mods.rhino.EvaluatorException;
 import dev.latvian.mods.rhino.NativeJavaMap;
 import dev.latvian.mods.rhino.Undefined;
 import dev.latvian.mods.rhino.type.TypeInfo;
-import net.minecraft.Util;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponentPatch;
-import net.minecraft.core.component.DataComponentPredicate;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.component.PatchedDataComponentMap;
@@ -39,10 +37,11 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.Util;
 import net.minecraft.world.item.component.CustomData;
 import org.apache.commons.lang3.mutable.MutableObject;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -107,7 +106,8 @@ public interface DataComponentWrapper {
 			return (DataComponentType<?>) object;
 		}
 
-		return BuiltInRegistries.DATA_COMPONENT_TYPE.get(ID.mc(object));
+		var id = ID.mc(object);
+		return BuiltInRegistries.DATA_COMPONENT_TYPE.getOptional(id).orElseThrow(() -> new KubeRuntimeException("Unknown data component type: " + object));
 	}
 
 	static DataComponentMap readMap(@Nullable DynamicOps<Tag> registryOps, StringReader reader) throws CommandSyntaxException {
@@ -130,7 +130,10 @@ public interface DataComponentWrapper {
 				reader.expect('=');
 				reader.skipWhitespace();
 				int i = reader.getCursor();
-				var dataResult = dataComponentType.codecOrThrow().parse(registryOps == null ? NbtOps.INSTANCE : registryOps, new TagParser(reader).readValue());
+
+				var ops = registryOps == null ? NbtOps.INSTANCE : registryOps;
+				var parsed = TagParser.create(ops).parseFully(reader);
+				var dataResult = dataComponentType.codecOrThrow().parse(ops, parsed);
 
 				if (builder == null) {
 					builder = DataComponentMap.builder();
@@ -157,13 +160,13 @@ public interface DataComponentWrapper {
 		}
 
 		if (reader.canRead() && reader.peek() == '{') {
-			var tag = new TagParser(reader).readStruct();
+			var compound = TagParser.parseCompoundAsArgument(reader);
 
 			if (builder == null) {
 				builder = DataComponentMap.builder();
 			}
 
-			builder.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+			builder.set(DataComponents.CUSTOM_DATA, CustomData.of(compound));
 		}
 
 		return builder == null ? DataComponentMap.EMPTY : builder.build();
@@ -176,15 +179,16 @@ public interface DataComponentWrapper {
 			return DataComponentPatch.EMPTY;
 		}
 
+		var ops = registryOps == null ? NbtOps.INSTANCE : registryOps;
 		DataComponentPatch.Builder builder = null;
 
-		if (reader.canRead() && reader.peek() == '[') {
+		if (reader.peek() == '[') {
 			reader.skip();
 
 			while (reader.canRead() && reader.peek() != ']') {
 				reader.skipWhitespace();
-				boolean remove = reader.canRead() && reader.peek() == '!';
 
+				boolean remove = reader.canRead() && reader.peek() == '!';
 				if (remove) {
 					reader.skip();
 				}
@@ -192,26 +196,27 @@ public interface DataComponentWrapper {
 				var dataComponentType = readComponentType(reader);
 
 				if (remove) {
-					reader.skipWhitespace();
-
-					if (reader.canRead() && reader.peek() != ']') {
-						reader.expect(',');
-						reader.skipWhitespace();
-					}
-
 					if (builder == null) {
 						builder = DataComponentPatch.builder();
 					}
 
 					builder.remove(dataComponentType);
+
+					reader.skipWhitespace();
+					if (reader.canRead() && reader.peek() == ',') {
+						reader.skip();
+						reader.skipWhitespace();
+					}
 					continue;
 				}
 
 				reader.skipWhitespace();
 				reader.expect('=');
 				reader.skipWhitespace();
+
 				int i = reader.getCursor();
-				var dataResult = dataComponentType.codecOrThrow().parse(registryOps == null ? NbtOps.INSTANCE : registryOps, new TagParser(reader).readValue());
+				var input = TagParser.create(ops).parseFully(reader);
+				var dataResult = dataComponentType.codecOrThrow().parse(ops, input);
 
 				if (builder == null) {
 					builder = DataComponentPatch.builder();
@@ -238,17 +243,18 @@ public interface DataComponentWrapper {
 		}
 
 		if (reader.canRead() && reader.peek() == '{') {
-			var tag = new TagParser(reader).readStruct();
+			var tag = TagParser.create(ops).parseFully(reader);
 
 			if (builder == null) {
 				builder = DataComponentPatch.builder();
 			}
 
-			builder.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+			builder.set(DataComponents.CUSTOM_DATA, CustomData.of((CompoundTag) tag));
 		}
 
 		return builder == null ? DataComponentPatch.EMPTY : builder.build();
 	}
+
 
 	static DataComponentType<?> readComponentType(StringReader stringReader) throws CommandSyntaxException {
 		if (!stringReader.canRead()) {
@@ -256,59 +262,23 @@ public interface DataComponentWrapper {
 		}
 
 		int i = stringReader.getCursor();
-		ResourceLocation resourceLocation = ResourceLocation.read(stringReader);
-		DataComponentType<?> dataComponentType = BuiltInRegistries.DATA_COMPONENT_TYPE.get(resourceLocation);
+		Identifier identifier = Identifier.read(stringReader);
+		DataComponentType<?> dataComponentType = BuiltInRegistries.DATA_COMPONENT_TYPE.getValue(identifier);
 		if (dataComponentType != null && !dataComponentType.isTransient()) {
 			return dataComponentType;
 		} else {
 			stringReader.setCursor(i);
-			throw ERROR_UNKNOWN_COMPONENT.createWithContext(stringReader, resourceLocation);
+			throw ERROR_UNKNOWN_COMPONENT.createWithContext(stringReader, identifier);
 		}
 	}
 
-	static DataComponentPredicate readPredicate(@Nullable DynamicOps<Tag> registryOps, StringReader reader) throws CommandSyntaxException {
-		var map = reader.canRead() ? readMap(registryOps, reader) : DataComponentMap.EMPTY;
-		return map.isEmpty() ? DataComponentPredicate.EMPTY : DataComponentPredicate.allOf(map);
+	static DataComponentMap readPredicate(@Nullable DynamicOps<Tag> registryOps, StringReader reader) throws CommandSyntaxException {
+		return reader.canRead() ? readMap(registryOps, reader) : DataComponentMap.EMPTY;
 	}
+
 
 	static boolean filter(Object from, TypeInfo target) {
 		return from == null || from instanceof DataComponentMap || from instanceof DataComponentPatch || from instanceof Map || from instanceof NativeJavaMap || from instanceof String s && (s.isEmpty() || s.charAt(0) == '[');
-	}
-
-	@Deprecated(forRemoval = true)
-	static DataComponentMap mapOf(@Nullable DynamicOps<Tag> ops, Object o) {
-		try {
-			return readMap(ops, new StringReader(o.toString()));
-		} catch (CommandSyntaxException ex) {
-			throw new RuntimeException("Error parsing DataComponentMap from " + o, ex);
-		}
-	}
-
-	@Deprecated(forRemoval = true)
-	static DataComponentMap mapOrEmptyOf(@Nullable DynamicOps<Tag> ops, Object o) {
-		try {
-			return readMap(ops, new StringReader(o.toString()));
-		} catch (CommandSyntaxException ex) {
-			return DataComponentMap.EMPTY;
-		}
-	}
-
-	@Deprecated(forRemoval = true)
-	static DataComponentPatch patchOf(@Nullable DynamicOps<Tag> ops, Object o) {
-		try {
-			return readPatch(ops, new StringReader(o.toString()));
-		} catch (CommandSyntaxException ex) {
-			throw new RuntimeException("Error parsing DataComponentPatch from " + o, ex);
-		}
-	}
-
-	@Deprecated(forRemoval = true)
-	static DataComponentPatch patchOrEmptyOf(@Nullable DynamicOps<Tag> ops, Object o) {
-		try {
-			return readPatch(ops, new StringReader(o.toString()));
-		} catch (CommandSyntaxException ex) {
-			return DataComponentPatch.EMPTY;
-		}
 	}
 
 	static DataComponentMap mapOf(Context cx, Object from) {
@@ -357,7 +327,7 @@ public interface DataComponentWrapper {
 				if (!errors.isEmpty()) {
 					var joiner = new StringJoiner("; ");
 					errors.forEach((type, error) -> {
-						var id = reg.access().registryOrThrow(Registries.DATA_COMPONENT_TYPE).getKeyOrNull(type);
+						var id = reg.lookupOrThrow(Registries.DATA_COMPONENT_TYPE).getKeyOrNull(type);
 						joiner.add("'%s' -> %s".formatted(id, error));
 					});
 					yield error(() -> "Invalid component map format, errored input: [%s]".formatted(joiner.toString()), builder.build());
@@ -398,7 +368,7 @@ public interface DataComponentWrapper {
 				if (!errors.isEmpty()) {
 					var joiner = new StringJoiner("; ");
 					errors.forEach((type, error) -> {
-						var id = reg.access().registryOrThrow(Registries.DATA_COMPONENT_TYPE).getKeyOrNull(type);
+						var id = reg.lookupOrThrow(Registries.DATA_COMPONENT_TYPE).getKeyOrNull(type);
 						joiner.add("'%s' -> %s".formatted(id, error));
 					});
 					yield error(() -> "Invalid component map format, errored input: [%s]".formatted(joiner.toString()), builder.build());
@@ -418,7 +388,7 @@ public interface DataComponentWrapper {
 		};
 	}
 
-	static <T> DataResult<Optional<T>> tryWrapComponent(Context cx, DataComponentType<T> type, Object value) {
+	static <T> DataResult<Optional<T>> tryWrapComponent(Context cx, DataComponentType<T> type, @Nullable Object value) {
 		var reg = RegistryAccessContainer.of(cx);
 
 		var valueType = getTypeInfo(type);
@@ -427,7 +397,7 @@ public interface DataComponentWrapper {
 			return success(Optional.empty());
 		}
 
-		var evalError = new MutableObject<EvaluatorException>();
+		var evalError = new MutableObject<@Nullable EvaluatorException>();
 
 		if (valueType.shouldConvert() && cx.canConvert(value, valueType)) {
 			try {
@@ -447,8 +417,8 @@ public interface DataComponentWrapper {
 			//noinspection unchecked
 			return (DataResult<Optional<T>>) switch (codec.parse(reg.json(), JsonUtils.of(cx, value))) {
 				case DataResult.Success<?> success -> success.map(Optional::of);
-				case DataResult.Error<?> error -> error.mapError(err -> evalError.getValue() != null
-					? "Failed to parse component from type wrappers and codec! Native: %s, Codec: %s".formatted(evalError.getValue().details(), err)
+				case DataResult.Error<?> error -> error.mapError(err -> evalError.get() != null
+					? "Failed to parse component from type wrappers and codec! Native: %s, Codec: %s".formatted(evalError.get().details(), err)
 					: "Failed to parse component from codec: %s!".formatted(err));
 			};
 		} else {

@@ -1,62 +1,37 @@
-name: Build (2101)
+name: Build
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - "2101"
+      - "2601"
+    tags-ignore:
+      - "**"
+    paths:
+      - "gradle/**"
+      - "**.java"
+      - "**.kts"
+      - "**.properties"
+      - "**/build.yml"
+      - "**/accesstransformer.cfg"
+  pull_request:
+    branches:
+      - "2601"
+    paths:
+      - "gradle/**"
+      - "**.java"
+      - "**.kts"
+      - "**.properties"
+      - "**/build.yml"
+      - "**/accesstransformer.cfg"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[ci skip]')"
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 5
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "21"
-          cache: gradle
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Increment build number
-        id: build_number
-        env:
-          GH_TOKEN: ${{ secrets.BUILD_NUMBER_TOKEN }}
-        run: |
-          current=$(gh api repos/$GITHUB_REPOSITORY/actions/variables/BUILD_NUMBER_2101 --jq '.value')
-          next=$((current + 1))
-          gh variable set BUILD_NUMBER_2101 --body "$next" --repo "$GITHUB_REPOSITORY"
-          echo "number=$next" >> "$GITHUB_OUTPUT"
-
-      - name: Build with Gradle
-        run: ./gradlew build -x test --stacktrace
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
-
-      - name: Publish to latvian.dev Maven
-        run: ./gradlew publish --stacktrace
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
-          MAVEN_URL: "https://maven.latvian.dev/releases"
-          MAVEN_USERNAME: "lat"
-          MAVEN_TOKEN: ${{ secrets.MAVEN_TOKEN }}
-
-      - name: Publish to saps.dev Maven
-        run: ./gradlew publish --stacktrace
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.number }}
-          MAVEN_URL: "https://maven.saps.dev/releases"
-          MAVEN_USERNAME: "latvian"
-          MAVEN_TOKEN: ${{ secrets.SAPS_TOKEN }}
+  redirect:
+    uses: AlmostReliable/.github/.github/workflows/build.yml@main
+    with:
+      java-distribution: "microsoft"
+      java-version: "25"

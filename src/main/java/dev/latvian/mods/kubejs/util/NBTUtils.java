@@ -21,7 +21,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagType;
 import net.minecraft.nbt.TagTypes;
 import net.minecraft.network.FriendlyByteBuf;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.io.DataInput;
 import java.io.DataInputStream;
@@ -70,9 +70,9 @@ public interface NBTUtils {
 		return switch (t) {
 			case null -> JsonNull.INSTANCE;
 			case EndTag endTag -> JsonNull.INSTANCE;
-			case StringTag stringTag -> new JsonPrimitive(stringTag.getAsString());
-			case NumericTag numericTag -> new JsonPrimitive(numericTag.getAsNumber());
-			case CollectionTag<?> l -> {
+			case StringTag stringTag -> new JsonPrimitive(stringTag.asString().get());
+			case NumericTag numericTag -> new JsonPrimitive(numericTag.asNumber().get());
+			case CollectionTag l -> {
 				JsonArray array = new JsonArray();
 
 				for (Tag tag : l) {
@@ -84,18 +84,17 @@ public interface NBTUtils {
 			case CompoundTag c -> {
 				JsonObject object = new JsonObject();
 
-				for (String key : c.getAllKeys()) {
+				for (String key : c.keySet()) {
 					object.add(key, toJson(c.get(key)));
 				}
 
 				yield object;
 			}
-			default -> JsonNull.INSTANCE;
 		};
 	}
 
 	@Nullable
-	static OrderedCompoundTag read(FriendlyByteBuf buf) {
+	static CompoundTag read(FriendlyByteBuf buf) {
 		int i = buf.readerIndex();
 		byte b = buf.readByte();
 		if (b == 0) {
@@ -129,9 +128,9 @@ public interface NBTUtils {
 		return tag.tags;
 	}
 
-	TagType<OrderedCompoundTag> COMPOUND_TYPE = new TagType.VariableSize<>() {
+	TagType<CompoundTag> COMPOUND_TYPE = new TagType.VariableSize<>() {
 		@Override
-		public OrderedCompoundTag load(DataInput dataInput, NbtAccounter accounter) throws IOException {
+		public CompoundTag load(DataInput dataInput, NbtAccounter accounter) throws IOException {
 			accounter.pushDepth();
 
 			try {
@@ -148,7 +147,7 @@ public interface NBTUtils {
 					}
 				}
 
-				return new OrderedCompoundTag(map);
+				return new CompoundTag(map);
 			} finally {
 				accounter.popDepth();
 			}
@@ -247,6 +246,7 @@ public interface NBTUtils {
 		}
 	};
 
+
 	TagType<ListTag> LIST_TYPE = new TagType.VariableSize<>() {
 		@Override
 		public ListTag load(DataInput dataInput, NbtAccounter accounter) throws IOException {
@@ -267,7 +267,7 @@ public interface NBTUtils {
 						list.add(valueType.load(dataInput, accounter));
 					}
 
-					return new ListTag(list, typeId);
+					return new ListTag(list);
 				}
 			} finally {
 				accounter.popDepth();

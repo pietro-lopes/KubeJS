@@ -2,19 +2,19 @@ package dev.latvian.mods.kubejs.recipe.schema;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.mojang.serialization.DataResult;
 import com.mojang.serialization.DynamicOps;
 import dev.latvian.mods.kubejs.recipe.RecipeKey;
-import dev.latvian.mods.kubejs.recipe.RecipeTypeRegistryContext;
 import dev.latvian.mods.kubejs.recipe.schema.function.RecipeFunctionInstance;
 import dev.latvian.mods.kubejs.recipe.schema.function.RecipeSchemaFunction;
 import dev.latvian.mods.kubejs.recipe.schema.postprocessing.RecipePostProcessor;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.JsonUtils;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,14 +24,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.SequencedMap;
 
+import static com.mojang.serialization.DataResult.Error;
+import static com.mojang.serialization.DataResult.Success;
+
 public class JsonRecipeSchemaLoader {
+	@NullUnmarked
 	private static final class RecipeSchemaBuilder {
-		private final ResourceLocation id;
+		private final Identifier id;
 		private final RecipeSchemaData data;
 		private RecipeSchema schema;
 
 		private RecipeSchemaBuilder parent;
-		private ResourceLocation overrideType;
+		private Identifier overrideType;
 		private List<RecipeKey<?>> keys;
 		private List<RecipeSchemaData.ConstructorData> constructors;
 		private Map<String, RecipeSchemaFunction> functions;
@@ -41,7 +45,7 @@ public class JsonRecipeSchemaLoader {
 		private Map<String, JsonElement> overrideKeys;
 		private List<RecipePostProcessor> postProcessors;
 
-		private RecipeSchemaBuilder(ResourceLocation id, RecipeSchemaData data) {
+		private RecipeSchemaBuilder(Identifier id, RecipeSchemaData data) {
 			this.id = id;
 			this.data = data;
 		}
@@ -129,6 +133,7 @@ public class JsonRecipeSchemaLoader {
 			}
 		}
 
+		@Nullable
 		private KubeRecipeFactory getRecipeFactory() {
 			if (recipeFactory != null) {
 				return recipeFactory;
@@ -224,7 +229,9 @@ public class JsonRecipeSchemaLoader {
 						}
 					}
 
-					schema = new RecipeSchema(keyOverrides, getKeys());
+					var schema = new RecipeSchema(keyOverrides, getKeys());
+					this.schema = schema;
+
 					schema.typeOverride = overrideType;
 
 					var rf = getRecipeFactory();
@@ -277,7 +284,7 @@ public class JsonRecipeSchemaLoader {
 						if (func.isSuccess()) {
 							schema.function(new RecipeFunctionInstance(entry.getKey(), func.getOrThrow()));
 						} else {
-							throw new NullPointerException("Failed to parse function '" + entry.getKey() + "' of recipe schema '" + id + "': " + func.error().map(DataResult.Error::message).orElse("Unknown Error"));
+							throw new NullPointerException("Failed to parse function '" + entry.getKey() + "' of recipe schema '" + id + "': " + func.error().map(Error::message).orElse("Unknown Error"));
 						}
 					}
 
@@ -316,29 +323,27 @@ public class JsonRecipeSchemaLoader {
 		}
 	}
 
-	public static void load(RecipeTypeRegistryContext ctx, DynamicOps<JsonElement> jsonOps, RecipeSchemaRegistry event, ResourceManager resourceManager) {
-		var map = new HashMap<ResourceLocation, RecipeSchemaBuilder>();
-		var recipeSchemaDataCodec = RecipeSchemaData.CODEC.apply(ctx);
+	static void load(DynamicOps<JsonElement> ops, RecipeSchemaStorage storage, RecipeSchemaRegistry event, ResourceManager resourceManager) {
+		var map = new HashMap<Identifier, RecipeSchemaBuilder>();
+		var recipeSchemaDataCodec = RecipeSchemaData.CODEC;
 
 		for (var entry : resourceManager.listResources("kubejs/recipe_schema", path -> path.getPath().endsWith(".json")).entrySet()) {
 			try (var reader = entry.getValue().openAsReader()) {
 				var json = JsonUtils.GSON.fromJson(reader, JsonObject.class);
 				var id = entry.getKey().withPath(entry.getKey().getPath().substring("kubejs/recipe_schema/".length(), entry.getKey().getPath().length() - ".json".length()));
-				var data = recipeSchemaDataCodec.parse(jsonOps, json);
 
-				if (data.isSuccess()) {
-					map.put(id, new RecipeSchemaBuilder(id, data.getOrThrow()));
-				} else {
-					ConsoleJS.SERVER.error("Error parsing recipe schema json " + entry.getKey() + ": " + data.error().map(DataResult.Error::message).orElse("Unknown Error"));
+				switch (recipeSchemaDataCodec.parse(ops, json)) {
+					case Success(var value, _) -> map.put(id, new RecipeSchemaBuilder(id, value));
+					case Error(var msg, _, _) -> ScriptType.SERVER.console.error("Error parsing recipe schema json %s: %s".formatted(entry.getKey(), msg.get()));
 				}
 			} catch (Exception ex) {
-				ConsoleJS.SERVER.error("Error reading recipe schema json " + entry.getKey(), ex);
+				ScriptType.SERVER.console.error("Error reading recipe schema json " + entry.getKey(), ex);
 			}
 		}
 
 		for (var builder : map.values()) {
 			for (var m : builder.data.mappings()) {
-				ctx.storage().mappings.put(m, builder.id);
+				storage.mappings.put(m, builder.id);
 			}
 		}
 
@@ -349,7 +354,7 @@ public class JsonRecipeSchemaLoader {
 
 			if (builder.data.recipeFactory().isPresent()) {
 				var fname = builder.data.recipeFactory().get();
-				builder.recipeFactory = ctx.storage().recipeTypes.get(fname);
+				builder.recipeFactory = storage.recipeTypes.get(fname);
 
 				if (builder.recipeFactory == null) {
 					throw new NullPointerException("Recipe factory '" + fname + "' not found for recipe schema '" + builder.id + "'");
@@ -371,7 +376,7 @@ public class JsonRecipeSchemaLoader {
 
 							try {
 								//noinspection unchecked, rawtypes
-								key.optional = (RecipeOptional) RecipeOptional.unit(key.codec.decode(jsonOps, optionalJson).getOrThrow().getFirst());
+								key.optional = (RecipeOptional) RecipeOptional.unit(key.codec.decode(ops, optionalJson).getOrThrow().getFirst());
 							} catch (Exception ex) {
 								throw new IllegalArgumentException("Failed to create optional value for key '" + key + "' of '" + builder.id + "' from " + optionalJson, ex);
 							}
@@ -390,7 +395,7 @@ public class JsonRecipeSchemaLoader {
 						key.alwaysWrite = keyData.alwaysWrite();
 						builder.keys.add(key);
 					} catch (Exception ex) {
-						ConsoleJS.SERVER.error("Error parsing recipe schema '" + builder.id + "' key " + keyData.name(), ex);
+						ScriptType.SERVER.console.error("Error parsing recipe schema '" + builder.id + "' key " + keyData.name(), ex);
 					}
 				}
 			}
@@ -417,7 +422,7 @@ public class JsonRecipeSchemaLoader {
 		}
 
 		for (var builder : map.values()) {
-			var schema = builder.getSchema(jsonOps);
+			var schema = builder.getSchema(ops);
 			// System.out.println("SCHEMA " + builder.id);
 
 			for (var constructor : schema.constructors().values()) {
@@ -435,7 +440,7 @@ public class JsonRecipeSchemaLoader {
 		}
 
 		for (var builder : map.values()) {
-			var schema = builder.getSchema(jsonOps);
+			var schema = builder.getSchema(ops);
 			event.namespace(builder.id.getNamespace()).register(builder.id.getPath(), schema);
 		}
 	}

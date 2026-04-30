@@ -5,7 +5,7 @@ import dev.latvian.mods.kubejs.script.BindingRegistry;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.script.ScriptTypePredicate;
 import net.neoforged.neoforgespi.locating.IModFile;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
@@ -49,9 +49,10 @@ public class ModResourceBindings {
 	}
 
 	public void readBindings(String modId, IModFile mod) throws IOException {
-		var resource = mod.findResource("kubejs.bindings.txt");
+		var resource = mod.getFilePath().resolve("kubejs.bindings.txt");
 		if (Files.exists(resource)) {
 			try (var lines = Files.lines(resource)) {
+				@SuppressWarnings("NullableProblems") // there's no problem here idea you're smoking
 				List<BindingProvider> providers = lines.map(s -> s.split("#", 2)[0].trim())
 					.filter(line -> !line.isBlank())
 					.map(line -> createProvider(modId, line))

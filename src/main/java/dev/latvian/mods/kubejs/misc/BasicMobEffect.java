@@ -3,19 +3,19 @@ package dev.latvian.mods.kubejs.misc;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeMap;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import org.jetbrains.annotations.NotNull;
 
 public class BasicMobEffect extends MobEffect {
 	public final transient MobEffectBuilder builder;
 	private boolean modified = false;
-	private final ResourceLocation id;
+	private final Identifier id;
 	private final boolean instant;
 
 	public BasicMobEffect(MobEffectBuilder builder) {
@@ -26,7 +26,7 @@ public class BasicMobEffect extends MobEffect {
 	}
 
 	@Override
-	public boolean applyEffectTick(@NotNull LivingEntity entity, int i) {
+	public boolean applyEffectTick(ServerLevel serverLevel, LivingEntity entity, int i) {
 		if (builder.effectTick == null) {
 			return false;
 		}
@@ -45,13 +45,13 @@ public class BasicMobEffect extends MobEffect {
 	}
 
 	@Override
-	public void onMobRemoved(LivingEntity livingEntity, int amplifier, Entity.RemovalReason reason) {
-		super.onMobRemoved(livingEntity, amplifier, reason);
+	public void onMobRemoved(ServerLevel level, LivingEntity mob, int amplifier, Entity.RemovalReason reason) {
+		super.onMobRemoved(level, mob, amplifier, reason);
 	}
 
 	void applyAttributeModifications() {
 		if (!modified) {
-			builder.attributeModifiers.forEach((r, m) -> BuiltInRegistries.ATTRIBUTE.getHolder(r).ifPresent(h -> attributeModifiers.put(h, m)));
+			builder.attributeModifiers.forEach((r, m) -> BuiltInRegistries.ATTRIBUTE.get(r).ifPresent(h -> attributeModifiers.put(h, m)));
 			modified = true;
 		}
 	}
@@ -63,7 +63,7 @@ public class BasicMobEffect extends MobEffect {
 	}
 
 	@Override
-	public MobEffect addAttributeModifier(Holder<Attribute> attribute, ResourceLocation id, double d, AttributeModifier.Operation operation) {
+	public MobEffect addAttributeModifier(Holder<Attribute> attribute, Identifier id, double d, AttributeModifier.Operation operation) {
 		applyAttributeModifications();
 		return super.addAttributeModifier(attribute, id, d, operation);
 	}

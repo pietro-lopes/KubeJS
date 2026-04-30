@@ -6,6 +6,7 @@ import com.mojang.serialization.DataResult;
 import dev.latvian.mods.kubejs.CommonProperties;
 import dev.latvian.mods.kubejs.DevProperties;
 import dev.latvian.mods.kubejs.core.RecipeLikeKJS;
+import dev.latvian.mods.kubejs.error.InvalidRecipeComponentValueException;
 import dev.latvian.mods.kubejs.error.KubeRuntimeException;
 import dev.latvian.mods.kubejs.error.MissingComponentException;
 import dev.latvian.mods.kubejs.error.RecipeComponentException;
@@ -24,11 +25,12 @@ import dev.latvian.mods.kubejs.recipe.ingredientaction.ReplaceAction;
 import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
 import dev.latvian.mods.kubejs.recipe.schema.RecipeSchema;
 import dev.latvian.mods.kubejs.recipe.special.KubeJSCraftingRecipe;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.ErrorStack;
-import dev.latvian.mods.kubejs.util.KubeResourceLocation;
+import dev.latvian.mods.kubejs.util.JsonUtils;
+import dev.latvian.mods.kubejs.util.KubeIdentifier;
 import dev.latvian.mods.kubejs.util.SlotFilter;
 import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.Scriptable;
@@ -36,26 +38,29 @@ import dev.latvian.mods.rhino.Wrapper;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import dev.latvian.mods.rhino.util.CustomJavaToJsWrapper;
 import dev.latvian.mods.rhino.util.HideFromJS;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeSerializer;
+import net.minecraft.world.item.crafting.ShapedRecipe;
+import net.minecraft.world.item.crafting.ShapelessRecipe;
 import org.apache.commons.lang3.mutable.MutableObject;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+@NullUnmarked
 public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 	public static final String CHANGED_MARKER = "_kubejs_changed_marker";
 	public static final TypeInfo TYPE_INFO = TypeInfo.of(KubeRecipe.class);
 
-	public ResourceLocation id;
+	public Identifier id;
 	public RecipeTypeFunction type;
 	public boolean newRecipe;
 	public boolean removed;
@@ -85,7 +90,7 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 				v.key.component.readFromJson(this, Cast.to(v), json);
 			} catch (Exception ex) {
 				if (v.key.optional()) {
-					ConsoleJS.SERVER.warn("Failed to read component '%s' from recipe %s, falling back to default value".formatted(v.key, this), sourceLine, ex, RecipesKubeEvent.POST_SKIP_ERROR);
+					ScriptType.SERVER.console.warn("Failed to read component '%s' from recipe %s, falling back to default value".formatted(v.key, this), sourceLine, ex, RecipesKubeEvent.POST_SKIP_ERROR);
 				} else {
 					throw new RecipeComponentException("Failed to read required component '%s'".formatted(v.key), ex, v).source(sourceLine);
 				}
@@ -113,7 +118,7 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 		}
 	}
 
-	@Nullable
+	@NullUnmarked
 	public <T> T getValue(RecipeKey<T> key) {
 		var v = valueMap.getHolder(key);
 
@@ -179,6 +184,7 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 			if (save) {
 				for (var v : valueMap.holders) {
 					if (v.key.optional()) {
+						//noinspection DataFlowIssue (safe)
 						v.value = Cast.to(v.key.optional.getDefaultValue(type.schemaType));
 					}
 
@@ -215,26 +221,48 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 			cx.errors().pop();
 		}
 
-		for (var v : valueMap.holders) {
-			cx.errors().setKey(v.key.name);
-			v.validate(cx, sourceLine);
-		}
-
+		validateComponentValues(cx);
 		validate(cx);
 		cx.errors().pop();
 	}
 
-	/**
-	 * Perform additional validation after the recipe has been loaded.
-	 */
+	private void validateComponentValues(RecipeValidationContext cx) {
+		for (var v : valueMap.holders) {
+			cx.errors().setKey(v.key.name);
+			v.validate(cx, sourceLine);
+		}
+	}
+
+	/// Perform additional validation after the recipe has been loaded.
 	public void validate(RecipeValidationContext cx) {
+	}
+
+	/// Final validation hook that runs right before this recipe is serialized back into JSON.
+	///
+	/// This is useful for schemas that fill some values via custom functions (not constructor args),
+	/// where [#afterLoaded(RecipeValidationContext)] is too early to validate "fully-built" recipes.
+	///
+	/// Addons should prefer throwing a [KubeRuntimeException]
+	/// subtype here when validation fails. In particular,
+	/// [RecipeComponentException] or
+	/// [InvalidRecipeComponentValueException] will preserve
+	/// component/key/value context in the logged error, which is more useful than throwing a plain
+	/// runtime exception.
+	///
+	/// If this throws during recipe processing, KubeJS will:
+	/// - revert modified existing recipes back to their original JSON
+	/// - drop newly created recipes (so they don't end up as broken JSON in the final map)
+	///
+	/// @throws KubeRuntimeException preferably, or another runtime exception, if the recipe is
+	///                              invalid for final serialization
+	public void validateForWrite(RecipeValidationContext cx) throws KubeRuntimeException {
 	}
 
 	public final void save() {
 		changed = true;
 	}
 
-	public KubeRecipe id(KubeResourceLocation id) {
+	public KubeRecipe id(KubeIdentifier id) {
 		this.id = id.wrapped();
 		save();
 		return this;
@@ -303,7 +331,7 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 
 	@Override
 	@Deprecated
-	public final ResourceLocation kjs$getOrCreateId() {
+	public final Identifier kjs$getOrCreateId() {
 		return getOrCreateId();
 	}
 
@@ -430,7 +458,7 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 	}
 
 	@HideFromJS
-	public ResourceLocation getOrCreateId() {
+	public Identifier getOrCreateId() {
 		if (id == null) {
 			var js = getSerializationTypeFunction();
 			var ids = CommonProperties.get().ignoreCustomUniqueRecipeIds ? null : js.schemaType.schema.buildUniqueId(this);
@@ -462,12 +490,12 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 		}
 
 		sb.append("] -> [");
-
+		boolean firstOutput = true;
 		for (var v : outputValues()) {
-			if (sb.length() > 1) {
+			if (!firstOutput) {
 				sb.append(",");
 			}
-
+			firstOutput = false;
 			sb.append(v.value);
 		}
 
@@ -479,34 +507,56 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 			removed = true;
 
 			if (DevProperties.get().logRemovedRecipes) {
-				ConsoleJS.SERVER.info("- " + this + ": " + getFromToString());
-			} else if (ConsoleJS.SERVER.shouldPrintDebug()) {
-				ConsoleJS.SERVER.debug("- " + this + ": " + getFromToString());
+				ScriptType.SERVER.console.info("- " + this + ": " + getFromToString());
+			} else if (ScriptType.SERVER.console.shouldPrintDebug()) {
+				ScriptType.SERVER.console.debug("- " + this + ": " + getFromToString());
 			}
 		}
 	}
 
-	/**
-	 * @deprecated It doesn't look like recipe staging is likely to return any time soon;
-	 *  if anybody finds a way to do it though or just needs this method for whatever reason,
-	 *  I am happy to keep it...
-	 */
+	/// @deprecated It doesn't look like recipe staging is likely to return any time soon;
+	/// if anybody finds a way to do it though or just needs this method for whatever reason,
+	/// I am happy to keep it...
 	@Deprecated(forRemoval = true)
 	public KubeRecipe stage(String s) {
 		throw new KubeRuntimeException("recipe.stage() is no longer supported by default due to vanilla changes!")
 			.source(sourceLine);
 	}
 
-	/**
-	 * Only used by {@link KubeRecipe#getOrCreateId()} and {@link KubeRecipe#serializeChanges()} in rare case that a recipe can be another recipe type than itself (e.g. kubejs:shaped -> minecraft:crafting_shaped)
-	 */
+	/// Only used by [KubeRecipe#getOrCreateId()] and [KubeRecipe#serializeChanges()] in rare case that a recipe can be another recipe type than itself (e.g. kubejs:shaped -> minecraft:crafting\_shaped)
 	public RecipeTypeFunction getSerializationTypeFunction() {
 		return type;
 	}
 
 	public KubeRecipe serializeChanges() {
 		if (newRecipe || hasChanged()) {
-			serialize();
+			try {
+				var stack = new ErrorStack();
+				var cx = new RecipeValidationContext.Impl(this, stack);
+				cx.errors().push(this);
+
+				validateComponentValues(cx);
+				validateForWrite(cx);
+				cx.errors().pop();
+
+				serialize();
+			} catch (Throwable ex) {
+				var rid = id != null ? id.toString() : "<no id>";
+				ScriptType.SERVER.console.error("Failed to serialize recipe %s[%s]: %s".formatted(rid, type, ex.toString()), sourceLine, ex, RecipesKubeEvent.CREATE_RECIPE_SKIP_ERROR);
+
+				// if this is an existing recipe, keep vanilla/mod JSON instead of crashing the whole reload
+				if (originalJson != null) {
+					json = (JsonObject) JsonUtils.copy(originalJson);
+					changed = false;
+					for (var v : valueMap.holders) {
+						v.write = false;
+					}
+				} else {
+					removed = true;
+				}
+
+				return this;
+			}
 
 			if (!modifyResult.isEmpty()) {
 				json.addProperty(KubeJSCraftingRecipe.MODIFY_RESULT_KEY, modifyResult);
@@ -516,7 +566,7 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 				try {
 					json.add(KubeJSCraftingRecipe.INGREDIENT_ACTIONS_KEY, IngredientActionHolder.LIST_CODEC.encodeStart(type.event.ops.json(), recipeIngredientActions).getOrThrow());
 				} catch (Throwable ex) {
-					ConsoleJS.SERVER.error("Failed to encode " + KubeJSCraftingRecipe.INGREDIENT_ACTIONS_KEY, sourceLine, ex, RecipesKubeEvent.CREATE_RECIPE_SKIP_ERROR);
+					ScriptType.SERVER.console.error("Failed to encode " + KubeJSCraftingRecipe.INGREDIENT_ACTIONS_KEY, sourceLine, ex, RecipesKubeEvent.CREATE_RECIPE_SKIP_ERROR);
 				}
 			}
 
@@ -548,41 +598,46 @@ public class KubeRecipe implements RecipeLikeKJS, CustomJavaToJsWrapper {
 					.ifSuccess(originalRecipe::setValue)
 					.ifError(err -> {
 						if (DevProperties.get().logErroringParsedRecipes) {
-							ConsoleJS.SERVER.error(err.message());
+							ScriptType.SERVER.console.error(err.message());
 						} else {
 							RecipeManager.LOGGER.error(err.message());
 						}
 					});
 			} catch (Throwable e) {
-				ConsoleJS.SERVER.error("Could not create recipe from json for " + this, e);
+				ScriptType.SERVER.console.error("Could not create recipe from json for " + this, e);
 			}
 		}
 
-		return originalRecipe.getValue();
+		return originalRecipe.get();
 	}
 
 	public ItemStack getOriginalRecipeResult() {
 		var original = getOriginalRecipe();
 
 		if (original == null) {
-			ConsoleJS.SERVER.warn("Original recipe is null - could not get result");
+			ScriptType.SERVER.console.warn("Original recipe is null - could not get result");
 			return ItemStack.EMPTY;
 		}
 
-		var result = original.getResultItem(type.event.registries.access());
-		//noinspection ConstantValue
-		return result == null ? ItemStack.EMPTY : result;
+		if (original instanceof ShapedRecipe shaped) {
+			return shaped.result.create();
+		} else if (original instanceof ShapelessRecipe shapeless) {
+			return shapeless.result.create();
+		}
+
+		ScriptType.SERVER.console.warn("Recipe type " + original.getClass().getName() + " does not support getResult");
+		return ItemStack.EMPTY;
 	}
 
 	public List<Ingredient> getOriginalRecipeIngredients() {
 		var original = getOriginalRecipe();
 
 		if (original == null) {
-			ConsoleJS.SERVER.warn("Original recipe is null - could not get ingredients");
+			ScriptType.SERVER.console.warn("Original recipe is null - could not get ingredients");
 			return List.of();
 		}
 
-		return List.copyOf(original.getIngredients());
+		return List.copyOf(original.placementInfo().ingredients());
 	}
 
 	public KubeRecipe ingredientAction(SlotFilter filter, IngredientAction action) {

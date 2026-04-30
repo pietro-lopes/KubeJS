@@ -1,25 +1,29 @@
 package dev.latvian.mods.kubejs.recipe.component;
 
 import com.mojang.serialization.Codec;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.IngredientWrapper;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.SizedIngredientWrapper;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.ItemMatch;
 import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
 import dev.latvian.mods.rhino.type.TypeInfo;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.neoforged.neoforge.common.crafting.SizedIngredient;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public record SizedIngredientComponent(RecipeComponentType<?> type, Codec<SizedIngredient> codec, boolean allowEmpty) implements RecipeComponent<SizedIngredient> {
-	public static final RecipeComponentType<SizedIngredient> SIZED_INGREDIENT = RecipeComponentType.unit(KubeJS.id("sized_ingredient"), type -> new SizedIngredientComponent(type, SizedIngredient.NESTED_CODEC, false));
-	public static final RecipeComponentType<SizedIngredient> OPTIONAL_SIZED_INGREDIENT = RecipeComponentType.unit(KubeJS.id("optional_sized_ingredient"), type -> new SizedIngredientComponent(type, SizedIngredient.NESTED_CODEC, true));
-
-	public static final RecipeComponentType<SizedIngredient> FLAT = RecipeComponentType.unit(KubeJS.id("flat_sized_ingredient"), type -> new SizedIngredientComponent(type, SizedIngredient.FLAT_CODEC, false));
-	public static final RecipeComponentType<SizedIngredient> OPTIONAL_FLAT = RecipeComponentType.unit(KubeJS.id("optional_flat_sized_ingredient"), type -> new SizedIngredientComponent(type, SizedIngredient.FLAT_CODEC, true));
+public record SizedIngredientComponent(ResourceKey<RecipeComponentType<?>> type, Codec<SizedIngredient> codec, boolean allowEmpty) implements RecipeComponent<SizedIngredient> {
+	public static final SizedIngredientComponent SIZED_INGREDIENT = new SizedIngredientComponent(
+		RecipeComponentType.builtin("sized_ingredient"),
+		SizedIngredient.NESTED_CODEC, false
+	);
+	public static final SizedIngredientComponent OPTIONAL_SIZED_INGREDIENT = new SizedIngredientComponent(
+		RecipeComponentType.builtin("optional_sized_ingredient"),
+		SizedIngredient.NESTED_CODEC, true
+	);
 
 	@Override
 	public TypeInfo typeInfo() {
@@ -27,7 +31,7 @@ public record SizedIngredientComponent(RecipeComponentType<?> type, Codec<SizedI
 	}
 
 	@Override
-	public boolean hasPriority(RecipeMatchContext cx, Object from) {
+	public boolean hasPriority(RecipeMatchContext cx, @Nullable Object from) {
 		return IngredientWrapper.isIngredientLike(from);
 	}
 

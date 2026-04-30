@@ -5,31 +5,30 @@ import dev.latvian.mods.kubejs.component.DataComponentWrapper;
 import dev.latvian.mods.kubejs.generator.KubeAssetGenerator;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.ItemWrapper;
 import dev.latvian.mods.kubejs.registry.ModelledBuilderBase;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.typings.Info;
 import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.kubejs.util.TickDuration;
 import dev.latvian.mods.rhino.util.ReturnsSelf;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.EitherHolder;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemUseAnimation;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.JukeboxPlayable;
 import net.minecraft.world.item.JukeboxSong;
 import net.minecraft.world.item.Rarity;
-import net.minecraft.world.item.UseAnim;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
 import net.minecraft.world.item.component.Tool;
 import net.minecraft.world.level.Level;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -48,36 +47,36 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 	public record HurtEnemyContext(ItemStack getItem, LivingEntity getTarget, LivingEntity getAttacker) {
 	}
 
-	public transient Map<Object, Object> components;
+	public transient @Nullable Map<Object, Object> components;
 	public transient int maxStackSize;
 	public transient int maxDamage;
 	public transient int burnTime;
-	private ResourceLocation containerItem;
-	public transient Function<ItemStack, Collection<ItemStack>> subtypes;
-	public transient Rarity rarity;
+	private @Nullable Identifier containerItem;
+	public transient @Nullable Function<ItemStack, Collection<ItemStack>> subtypes;
+	public transient @Nullable Rarity rarity;
 	public transient boolean fireResistant;
 	public transient boolean glow;
 	public transient final List<Component> tooltip;
 	@Nullable
 	public transient ItemTintFunction tint;
-	public transient FoodBuilder foodBuilder;
-	public transient Function<ItemStack, KubeColor> barColor;
-	public transient ToIntFunction<ItemStack> barWidth;
-	public transient NameCallback nameGetter;
+	public transient @Nullable FoodBuilder foodBuilder;
+	public transient @Nullable Function<ItemStack, KubeColor> barColor;
+	public transient @Nullable ToIntFunction<ItemStack> barWidth;
+	public transient @Nullable NameCallback nameGetter;
 
-	public transient UseAnim anim;
-	public transient ToIntBiFunction<ItemStack, LivingEntity> useDuration;
-	public transient UseCallback use;
-	public transient FinishUsingCallback finishUsing;
-	public transient ReleaseUsingCallback releaseUsing;
-	public transient Predicate<HurtEnemyContext> hurtEnemy;
-	public transient JukeboxPlayable jukeboxPlayable;
+	public transient @Nullable ItemUseAnimation anim;
+	public transient @Nullable ToIntBiFunction<ItemStack, LivingEntity> useDuration;
+	public transient @Nullable UseCallback use;
+	public transient @Nullable FinishUsingCallback finishUsing;
+	public transient @Nullable ReleaseUsingCallback releaseUsing;
+	public transient @Nullable Predicate<HurtEnemyContext> hurtEnemy;
+	public transient @Nullable ResourceKey<JukeboxSong> jukeboxSong;
 
-	public transient Tool tool;
-	public transient ItemAttributeModifiers itemAttributeModifiers;
+	public transient @Nullable Tool tool;
+	public transient @Nullable ItemAttributeModifiers itemAttributeModifiers;
 	public transient boolean canRepair;
 
-	public ItemBuilder(ResourceLocation id) {
+	public ItemBuilder(Identifier id) {
 		super(id);
 		this.baseTexture = id.withPath(ID.ITEM).toString();
 
@@ -169,7 +168,7 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 	}
 
 	@Info("Sets the item's container item, e.g. a bucket for a milk bucket.")
-	public ItemBuilder containerItem(ResourceLocation id) {
+	public ItemBuilder containerItem(Identifier id) {
 		containerItem = id;
 		return this;
 	}
@@ -199,12 +198,6 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 	@Info("Adds a tooltip to the item.")
 	public ItemBuilder tooltip(Component text) {
 		tooltip.add(text);
-		return this;
-	}
-
-	@Deprecated
-	public ItemBuilder group(@Nullable String g) {
-		ConsoleJS.STARTUP.error("Item builder .group() is no longer supported, use StartupEvents.modifyCreativeTab!");
 		return this;
 	}
 
@@ -279,7 +272,7 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 	}
 
 	@Info("Determines the animation of the item when used, e.g. eating food.")
-	public ItemBuilder useAnimation(UseAnim animation) {
+	public ItemBuilder useAnimation(ItemUseAnimation animation) {
 		this.anim = animation;
 		return this;
 	}
@@ -339,13 +332,9 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 		return this;
 	}
 
-	public ItemBuilder jukeboxPlayable(ResourceKey<JukeboxSong> song, boolean showInTooltip) {
-		this.jukeboxPlayable = new JukeboxPlayable(new EitherHolder<>(song), showInTooltip);
-		return this;
-	}
-
 	public ItemBuilder jukeboxPlayable(ResourceKey<JukeboxSong> song) {
-		return jukeboxPlayable(song, true);
+		this.jukeboxSong = song;
+		return this;
 	}
 
 	public ItemBuilder disableRepair() {
@@ -375,6 +364,7 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 
 	public Item.Properties createItemProperties() {
 		var properties = new KubeJSItemProperties(this);
+		properties.setId(ResourceKey.create(BuiltInRegistries.ITEM.key(), this.id));
 
 		if (components != null && !components.isEmpty()) {
 			for (var entry : components.entrySet()) {
@@ -383,7 +373,7 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 				if (type != null) {
 					properties.component((DataComponentType) type, entry.getValue());
 				} else {
-					ConsoleJS.STARTUP.error("Component '" + entry.getKey() + "' not found for item " + id);
+					ScriptType.STARTUP.console.error("Component '" + entry.getKey() + "' not found for item " + id);
 				}
 			}
 		}
@@ -404,8 +394,9 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 			properties.craftRemainder(item);
 		}
 
+		// TODO: rework into consumable!
 		if (foodBuilder != null) {
-			properties.food(foodBuilder.build());
+			foodBuilder.applyTo(properties);
 		}
 
 		if (fireResistant) {
@@ -420,12 +411,12 @@ public class ItemBuilder extends ModelledBuilderBase<Item> {
 			properties.attributes(itemAttributeModifiers);
 		}
 
-		if (jukeboxPlayable != null) {
-			properties.component(DataComponents.JUKEBOX_PLAYABLE, jukeboxPlayable);
+		if (jukeboxSong != null) {
+			properties.jukeboxPlayable(jukeboxSong);
 		}
 
 		if (!canRepair) {
-			properties.setNoRepair();
+			properties.setNoCombineRepair();
 		}
 
 		return properties;

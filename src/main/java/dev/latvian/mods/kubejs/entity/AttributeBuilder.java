@@ -5,17 +5,20 @@ import com.mojang.datafixers.util.Either;
 import dev.latvian.mods.kubejs.registry.BuilderBase;
 import dev.latvian.mods.rhino.util.HideFromJS;
 import dev.latvian.mods.rhino.util.ReturnsSelf;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.RangedAttribute;
 import net.neoforged.neoforge.common.BooleanAttribute;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Predicate;
+
+import static net.minecraft.world.entity.ai.attributes.Attribute.Sentiment;
 
 @SuppressWarnings("unused")
 @ReturnsSelf
@@ -24,11 +27,11 @@ public class AttributeBuilder extends BuilderBase<Attribute> {
 	}
 
 	public final List<Predicate<EntityType<?>>> predicateList = new ArrayList<>();
-	public Either<Range, Boolean> defaultValue;
+	public @Nullable Either<Range, Boolean> defaultValue;
 	public boolean syncable = true;
-	public Attribute.Sentiment sentiment;
+	public @Nullable Sentiment sentiment;
 
-	public AttributeBuilder(ResourceLocation id) {
+	public AttributeBuilder(Identifier id) {
 		super(id);
 	}
 
@@ -47,17 +50,17 @@ public class AttributeBuilder extends BuilderBase<Attribute> {
 		return this;
 	}
 
-	public AttributeBuilder sentiment(Attribute.Sentiment sentiment) {
+	public AttributeBuilder sentiment(Sentiment sentiment) {
 		this.sentiment = sentiment;
 		return this;
 	}
 
 	public AttributeBuilder negativeSentiment() {
-		return sentiment(Attribute.Sentiment.NEGATIVE);
+		return sentiment(Sentiment.NEGATIVE);
 	}
 
 	public AttributeBuilder neutralSentiment() {
-		return sentiment(Attribute.Sentiment.NEUTRAL);
+		return sentiment(Sentiment.NEUTRAL);
 	}
 
 	public AttributeBuilder attachTo(Predicate<EntityType<?>> entityType) {

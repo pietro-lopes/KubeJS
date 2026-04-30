@@ -1,33 +1,23 @@
 package dev.latvian.mods.kubejs.util;
 
-import com.google.gson.JsonNull;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 import dev.latvian.mods.kubejs.block.BlockModificationKubeEvent;
 import dev.latvian.mods.kubejs.item.ItemModificationKubeEvent;
 import dev.latvian.mods.kubejs.plugin.builtin.event.BlockEvents;
 import dev.latvian.mods.kubejs.plugin.builtin.event.ItemEvents;
 import dev.latvian.mods.kubejs.script.ScriptType;
-import dev.latvian.mods.rhino.Wrapper;
 import dev.latvian.mods.rhino.type.TypeUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.EndTag;
-import net.minecraft.nbt.NumericTag;
-import net.minecraft.nbt.StringTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.CreativeModeTab;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.event.ModifyDefaultComponentsEvent;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.lang.reflect.WildcardType;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -36,73 +26,6 @@ public class UtilsJS {
 
 	public static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
 	public static final Predicate<Object> ALWAYS_TRUE = o -> true;
-
-	// TODO: Remove this garbage
-	@Nullable
-	public static Object wrap(@Nullable Object o, JSObjectType type) {
-		//Primitives and already normalized objects
-		if (o == null || o instanceof WrappedJS || o instanceof Number || o instanceof Character || o instanceof String || o instanceof Enum || o.getClass().isPrimitive() && !o.getClass().isArray()) {
-			return o;
-		} else if (o instanceof CharSequence || o instanceof ResourceLocation) {
-			return o.toString();
-		} else if (o instanceof EndTag || o instanceof JsonNull) {
-			return null;
-		} else if (o instanceof Wrapper w) {
-			return wrap(w.unwrap(), type);
-		} else if (o instanceof NumericTag tag) {
-			return tag.getAsNumber();
-		} else if (o instanceof StringTag tag) {
-			return tag.getAsString();
-		} else if (o instanceof Tag) {
-			return o;
-		}
-		// Maps
-		else if (o instanceof Map) {
-			return o;
-		}
-		// Lists, Collections, Iterables, GSON Arrays
-		else if (o instanceof Iterable<?> itr) {
-			if (!type.checkList()) {
-				return null;
-			}
-
-			var list = new ArrayList<>();
-
-			for (var o1 : itr) {
-				list.add(o1);
-			}
-
-			return list;
-		}
-		// Arrays (and primitive arrays are a pain)
-		else if (o.getClass().isArray()) {
-			if (type.checkList()) {
-				return ListJS.ofArray(o);
-			} else {
-				return null;
-			}
-		}
-		// GSON Primitives
-		else if (o instanceof JsonPrimitive json) {
-			return JsonIO.toPrimitive(json);
-		}
-		// GSON Objects
-		else if (o instanceof JsonObject json) {
-			if (!type.checkMap()) {
-				return null;
-			}
-
-			var map = new HashMap<String, Object>(json.size());
-
-			for (var entry : json.entrySet()) {
-				map.put(entry.getKey(), entry.getValue());
-			}
-
-			return map;
-		}
-
-		return o;
-	}
 
 	public static <T> Predicate<T> onMatchDo(Predicate<T> predicate, Consumer<T> onMatch) {
 		return t -> {
@@ -114,11 +37,12 @@ public class UtilsJS {
 		};
 	}
 
-	// TODO: We could probably make these generic for RegistryObjectBuilderTypes,
-	//  so maybe look into that to allow people to modify builtin fluids, etc. as well.
-	public static void postModificationEvents() {
+	public static void postItemModificationEvents(ModifyDefaultComponentsEvent event) {
+		ItemEvents.MODIFICATION.post(ScriptType.STARTUP, new ItemModificationKubeEvent(event));
+	}
+
+	public static void postBlockModificationEvents() {
 		BlockEvents.MODIFICATION.post(ScriptType.STARTUP, new BlockModificationKubeEvent());
-		ItemEvents.MODIFICATION.post(ScriptType.STARTUP, new ItemModificationKubeEvent());
 	}
 
 	public static String toMappedTypeString(Type type) {
@@ -198,7 +122,7 @@ public class UtilsJS {
 	}
 
 	@Nullable
-	public static CreativeModeTab findCreativeTab(ResourceLocation id) {
-		return BuiltInRegistries.CREATIVE_MODE_TAB.get(id);
+	public static CreativeModeTab findCreativeTab(Identifier id) {
+		return BuiltInRegistries.CREATIVE_MODE_TAB.getValue(id);
 	}
 }

@@ -3,8 +3,9 @@ package dev.latvian.mods.kubejs.gui.chest;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Consumer;
 
@@ -13,12 +14,12 @@ public class ChestMenuData {
 	public Component title;
 	public final int rows;
 	public final ChestMenuSlot[] slots;
-	public ChestMenuClickEvent.Callback anyClicked;
-	public ChestMenuInventoryClickEvent.Callback inventoryClicked;
+	public ChestMenuClickEvent.@Nullable Callback anyClicked;
+	public ChestMenuInventoryClickEvent.@Nullable Callback inventoryClicked;
 	public boolean playerSlots;
-	public Runnable closed;
+	public @Nullable Runnable closed;
 	public ItemStack mouseItem;
-	public Container capturedInventory;
+	public @Nullable Container capturedInventory;
 
 	public ChestMenuData(ServerPlayer player, Component title, int rows) {
 		this.player = player;
@@ -59,7 +60,7 @@ public class ChestMenuData {
 		slot.setLeftClicked(leftClicked);
 	}
 
-	public void handleClick(int index, ClickType type, int button) {
+	public void handleClick(int index, ContainerInput type, int button) {
 		if (index < 0 || index >= slots.length) {
 			return;
 		}

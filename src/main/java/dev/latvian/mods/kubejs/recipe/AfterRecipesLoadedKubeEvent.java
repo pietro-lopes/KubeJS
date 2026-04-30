@@ -8,16 +8,16 @@ import dev.latvian.mods.kubejs.event.KubeEvent;
 import dev.latvian.mods.kubejs.recipe.filter.ConstantFilter;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeFilter;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.util.RegistryAccessContainer;
 import dev.latvian.mods.kubejs.util.RegistryOpsContainer;
 import dev.latvian.mods.rhino.Context;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.ReloadableServerResources;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeMap;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -35,7 +35,7 @@ public class AfterRecipesLoadedKubeEvent implements KubeEvent {
 
 	private final RecipeManagerKJS recipeManager;
 	private final RegistryAccessContainer registries;
-	private List<RecipeLikeKJS> originalRecipes;
+	private @Nullable List<RecipeLikeKJS> originalRecipes;
 	private boolean changed;
 
 	public AfterRecipesLoadedKubeEvent(ReloadableServerResources resources) {
@@ -47,9 +47,10 @@ public class AfterRecipesLoadedKubeEvent implements KubeEvent {
 
 	private List<RecipeLikeKJS> getOriginalRecipes() {
 		if (originalRecipes == null) {
-			originalRecipes = new ArrayList<>(recipeManager.kjs$getRecipeIdMap().values());
+			originalRecipes = new ArrayList<>(recipeManager.kjs$getRecipes().stream()
+				.map(r -> (RecipeLikeKJS) r)
+				.toList());
 		}
-
 		return originalRecipes;
 	}
 
@@ -84,9 +85,9 @@ public class AfterRecipesLoadedKubeEvent implements KubeEvent {
 				changed = true;
 
 				if (DevProperties.get().logRemovedRecipes) {
-					ConsoleJS.SERVER.info("- " + r);
-				} else if (ConsoleJS.SERVER.shouldPrintDebug()) {
-					ConsoleJS.SERVER.debug("- " + r);
+					ScriptType.SERVER.console.info("- " + r);
+				} else if (ScriptType.SERVER.console.shouldPrintDebug()) {
+					ScriptType.SERVER.console.debug("- " + r);
 				}
 			}
 		}
@@ -97,13 +98,11 @@ public class AfterRecipesLoadedKubeEvent implements KubeEvent {
 	@Override
 	public void afterPosted(EventResult result) {
 		if (changed) {
-			var map = new HashMap<ResourceLocation, RecipeHolder<?>>();
-
+			var holders = new ArrayList<RecipeHolder<?>>();
 			for (var r : getOriginalRecipes()) {
-				map.put(r.kjs$getOrCreateId(), (RecipeHolder) r);
+				holders.add((RecipeHolder<?>) r);
 			}
-
-			recipeManager.kjs$replaceRecipes(map);
+			recipeManager.kjs$replaceRecipes(RecipeMap.create(holders));
 		}
 	}
 }

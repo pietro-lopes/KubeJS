@@ -1,4 +1,5 @@
 package dev.latvian.mods.kubejs.integration.rei;
+/*
 
 import dev.architectury.hooks.fluid.forge.FluidStackHooksForge;
 import dev.latvian.mods.kubejs.item.ItemPredicate;
@@ -15,7 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.crafting.FluidIngredient;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Arrays;
 
@@ -47,7 +48,8 @@ public class REIIntegration {
 	}
 
 	public static EntryIngredient fluidIngredient(FluidIngredient ingredient) {
-		return EntryIngredient.of(Arrays.stream(ingredient.getStacks()).map(FluidStackHooksForge::fromForge).map(EntryStacks::of).toList());
+		FluidStack[] fluidStacks = (FluidStack[]) ingredient.fluids().stream().map(holder -> new FluidStack(holder.value(), 0)).toArray();
+		return EntryIngredient.of(Arrays.stream(fluidStacks).map(FluidStackHooksForge::fromForge).map(EntryStacks::of).toList());
 	}
 
 	public static EntryIngredient ingredientOf(Context cx, RecipeViewerEntryType type, Object from) {
@@ -61,4 +63,4 @@ public class REIIntegration {
 			return EntryIngredient.empty();
 		}
 	}
-}
+}*/

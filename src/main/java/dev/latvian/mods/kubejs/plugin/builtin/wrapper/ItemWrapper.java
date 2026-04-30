@@ -1,9 +1,11 @@
 package dev.latvian.mods.kubejs.plugin.builtin.wrapper;
 
+import com.google.common.collect.ImmutableMultimap;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
 import com.mojang.brigadier.StringReader;
@@ -24,19 +26,22 @@ import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.Wrapper;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import dev.latvian.mods.rhino.util.HideFromJS;
-import net.minecraft.Util;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.Mth;
+import net.minecraft.util.Util;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackLinkedSet;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.Fireworks;
 import net.minecraft.world.item.component.ResolvableProfile;
@@ -44,7 +49,7 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.ItemLike;
 import net.neoforged.neoforge.common.ItemAbility;
 import net.neoforged.neoforge.common.crafting.SizedIngredient;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -52,10 +57,7 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 
 @Info("Various item related helper methods")
 public interface ItemWrapper {
@@ -64,6 +66,7 @@ public interface ItemWrapper {
 	TypeInfo TYPE_INFO = TypeInfo.of(ItemStack.class);
 
 	@HideFromJS
+	@Deprecated(forRemoval = true)
 	Lazy<List<String>> CACHED_ITEM_TYPE_LIST = Lazy.of(() -> {
 		var cachedItemTypeList = new ArrayList<String>();
 
@@ -75,7 +78,8 @@ public interface ItemWrapper {
 	});
 
 	@HideFromJS
-	Lazy<Map<ResourceLocation, Collection<ItemStack>>> CACHED_ITEM_MAP = Lazy.map(map -> {
+	@Deprecated(forRemoval = true)
+	Lazy<Map<Identifier, Collection<ItemStackTemplate>>> CACHED_ITEM_MAP = Lazy.map(map -> {
 		var stackList = ItemStackLinkedSet.createTypeAndComponentsSet();
 
 		stackList.addAll(CreativeModeTabs.searchTab().getDisplayItems());
@@ -84,19 +88,20 @@ public interface ItemWrapper {
 			if (!stack.isEmpty()) {
 				map.computeIfAbsent(
 					stack.getItem().kjs$getIdLocation(),
-					_rl -> ItemStackLinkedSet.createTypeAndComponentsSet()
-				).add(stack.kjs$withCount(1));
+					_rl -> new ArrayList<>()
+				).add(ItemStackTemplate.fromNonEmptyStack(stack.kjs$withCount(1)));
 			}
 		}
 
 		for (var itemId : CACHED_ITEM_TYPE_LIST.get()) {
-			var itemRl = ResourceLocation.parse(itemId);
-			map.computeIfAbsent(itemRl, id -> Set.of(BuiltInRegistries.ITEM.get(id).getDefaultInstance()));
+			var itemRl = Identifier.parse(itemId);
+			map.computeIfAbsent(itemRl, id -> BuiltInRegistries.ITEM.get(id).map(h -> List.of(new ItemStackTemplate(h.value()))).orElse(List.of()));
 		}
 	});
 
 	@HideFromJS
-	Lazy<List<ItemStack>> CACHED_ITEM_LIST = Lazy.of(() -> CACHED_ITEM_MAP.get().values().stream().flatMap(Collection::stream).toList());
+	@Deprecated(forRemoval = true)
+	Lazy<List<ItemStackTemplate>> CACHED_ITEM_LIST = Lazy.of(() -> CACHED_ITEM_MAP.get().values().stream().flatMap(Collection::stream).toList());
 
 	@Info("Returns an ItemStack of the input")
 	static ItemStack of(ItemStack in) {
@@ -122,6 +127,7 @@ public interface ItemWrapper {
 	}
 
 	@HideFromJS
+	@Nullable
 	private static ItemStack wrapTrivial(Context cx, @Nullable Object from) {
 		while (from instanceof Wrapper w) {
 			from = w.unwrap();
@@ -154,9 +160,9 @@ public interface ItemWrapper {
 		// safe because wrapTrivial has handled the null case
 		assert from != null;
 		return switch (from) {
-			case ResourceLocation id -> findItem(id).map(Holder::value).map(Item::getDefaultInstance);
+			case Identifier id -> findItem(id).map(Holder::value).map(Item::getDefaultInstance);
 			case JsonElement json -> parseJson(cx, registries.nbt(), json);
-			case StringTag tag -> wrapResult(cx, tag.getAsString());
+			case StringTag tag -> wrapResult(cx, tag.value());
 			case CharSequence charSequence -> {
 				var os = from.toString().trim();
 				var s = os;
@@ -185,8 +191,12 @@ public interface ItemWrapper {
 				var map = cx.optionalMapOf(from);
 
 				if (map != null) {
-					// todo: if someone does something weird here, improve upon this parser
-					yield ItemStack.CODEC.parse(registries.java(), map);
+					// TODO: data results instead?
+					var item = ItemWrapper.wrapItem(cx, map.get("item"));
+					var amount = StringUtilsWrapper.parseInt(map.get("count"), 1);
+					var components = DataComponentWrapper.patchOrEmptyOf(cx, map.get("components"));
+
+					yield DataResult.success(new ItemStack(item.kjs$asHolder(), amount, components));
 				}
 
 				var invalid = from;
@@ -223,36 +233,36 @@ public interface ItemWrapper {
 		s = s.trim();
 		return switch (s) {
 			case "", "-", "air", "minecraft:air" -> DataResult.success(Items.AIR);
-			default -> ResourceLocation.read(s).flatMap(ItemWrapper::findItem).map(Holder::value);
+			default -> Identifier.read(s).flatMap(ItemWrapper::findItem).map(Holder::value);
 		};
 	}
 
-	@HideFromJS
-	static DataResult<Holder<Item>> findItem(ResourceLocation id) {
+	static DataResult<Holder<Item>> findItem(Identifier id) {
+		var key = ResourceKey.create(Registries.ITEM, id);
+
 		return BuiltInRegistries.ITEM
-			.getHolder(id)
+			.get(key)
+			.map(h -> (Holder<Item>) h)
 			.map(DataResult::success)
-			.orElseGet(() -> DataResult.error(() -> "Item with ID " + id + " does not exist!"))
-			.map(Function.identity());
+			.orElseGet(() -> DataResult.error(() -> "Item with ID " + id + " does not exist!"));
 	}
 
+	// TODO: remove or rework
 	@Info("Get a list of most items in the game. Items not in a creative tab are ignored")
-	static List<ItemStack> getList() {
+	static List<ItemStackTemplate> getList() {
 		return CACHED_ITEM_LIST.get();
 	}
 
 	@Info("Get a list of all the item ids in the game")
-	static List<String> getTypeList() {
-		return CACHED_ITEM_TYPE_LIST.get();
+	// TODO: remove or rework
+	static List<String> getTypeList(Context cx) {
+		return RegistryAccessContainer.of(cx).item()
+			.keySet()
+			.stream()
+			.map(Identifier::toString)
+			.toList();
 	}
 
-	static Map<ResourceLocation, Collection<ItemStack>> getTypeToStackMap() {
-		return CACHED_ITEM_MAP.get();
-	}
-
-	static Collection<ItemStack> getVariants(ItemStack item) {
-		return getTypeToStackMap().get(item.kjs$getIdLocation());
-	}
 
 	@Info("Get the item that represents air/an empty slot")
 	static ItemStack getEmpty() {
@@ -265,17 +275,17 @@ public interface ItemWrapper {
 	}
 
 	@Info("Gets an Item from an item id")
-	static Item getItem(ResourceLocation id) {
-		return BuiltInRegistries.ITEM.get(id);
+	static Item getItem(Identifier id) {
+		return BuiltInRegistries.ITEM.getOptional(id).orElseThrow(() -> new KubeRuntimeException("Unknown item: " + id));
 	}
 
 	@Info("Gets an items id from the Item")
-	static ResourceLocation getId(Item item) {
+	static Identifier getId(Item item) {
 		return BuiltInRegistries.ITEM.getKey(item);
 	}
 
 	@Info("Checks if the provided item id exists in the registry")
-	static boolean exists(ResourceLocation id) {
+	static boolean exists(Identifier id) {
 		return BuiltInRegistries.ITEM.containsKey(id);
 	}
 
@@ -289,11 +299,11 @@ public interface ItemWrapper {
 
 	static ItemStack playerHead(String name) {
 		var stack = new ItemStack(Items.PLAYER_HEAD);
-		stack.set(DataComponents.PROFILE, new ResolvableProfile(Optional.of(name), Optional.empty(), new PropertyMap()));
+		stack.set(DataComponents.PROFILE, ResolvableProfile.createUnresolved(name));
 		return stack;
 	}
 
-	static ItemStack playerHeadFromBase64(UUID uuid, String textureBase64) {
+	static ItemStack playerHeadFromBase64(@Nullable UUID uuid, @Nullable String textureBase64) {
 		if (uuid == null || uuid.equals(Util.NIL_UUID)) {
 			throw new IllegalArgumentException("UUID can't be null!");
 		}
@@ -303,11 +313,17 @@ public interface ItemWrapper {
 		}
 
 		var stack = new ItemStack(Items.PLAYER_HEAD);
-		var properties = new PropertyMap();
-		properties.put("textures", new Property("textures", textureBase64));
-		stack.set(DataComponents.PROFILE, new ResolvableProfile(Optional.empty(), Optional.of(uuid), properties));
+
+		var props = PropertyMap.EMPTY;
+		props = new PropertyMap(ImmutableMultimap.of(
+			"textures", new Property("textures", textureBase64)
+		));
+
+		var profile = new GameProfile(uuid, "", props);
+		stack.set(DataComponents.PROFILE, ResolvableProfile.createResolved(profile));
 		return stack;
 	}
+
 
 	static ItemStack playerHeadFromUrl(String url) {
 		var root = new JsonObject();
@@ -324,7 +340,7 @@ public interface ItemWrapper {
 		return playerHeadFromUrl("https://textures.minecraft.net/texture/" + hash);
 	}
 
-	static ItemAbility wrapItemAbility(Object object) {
+	static @Nullable ItemAbility wrapItemAbility(@Nullable Object object) {
 		if (object instanceof ItemAbility ta) {
 			return ta;
 		} else if (object != null) {
@@ -334,7 +350,7 @@ public interface ItemWrapper {
 		}
 	}
 
-	static boolean isItemStackLike(Object from) {
+	static boolean isItemStackLike(@Nullable Object from) {
 		return from instanceof ItemStack || from instanceof ItemLike;
 	}
 

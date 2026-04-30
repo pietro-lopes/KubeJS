@@ -6,9 +6,9 @@ import dev.latvian.mods.kubejs.util.UtilsJS;
 import dev.latvian.mods.rhino.type.EnumTypeInfo;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Predicate;
 
@@ -18,7 +18,7 @@ public class EventTargetType<T> {
 		Transformer IDENTITY = o -> o;
 
 		@Nullable
-		Object transform(Object source);
+		Object transform(@Nullable Object source);
 	}
 
 	public static <T> EventTargetType<T> create(Class<T> type) {
@@ -26,8 +26,8 @@ public class EventTargetType<T> {
 	}
 
 	public static final EventTargetType<String> STRING = create(String.class).transformer(EventTargetType::toString).describeType(TypeInfo.STRING);
-	public static final EventTargetType<ResourceLocation> ID = create(ResourceLocation.class).transformer(EventTargetType::toResourceLocation).describeType(TypeInfo.of(ResourceLocation.class));
-	public static final EventTargetType<ResourceKey<Registry<?>>> REGISTRY = Cast.to(create(ResourceKey.class).transformer(EventTargetType::toRegistryKey).identity().describeType(TypeInfo.of(ResourceKey.class).withParams(TypeInfo.of(Registry.class))));
+	public static final EventTargetType<Identifier> ID = create(Identifier.class).transformer(EventTargetType::toIdentifier).describeType(TypeInfo.of(Identifier.class));
+	public static final EventTargetType<ResourceKey<? extends Registry<?>>> REGISTRY = Cast.to(create(ResourceKey.class).transformer(EventTargetType::toRegistryKey).identity().describeType(TypeInfo.of(ResourceKey.class).withParams(TypeInfo.of(Registry.class))));
 
 	public static <T> EventTargetType<ResourceKey<T>> registryKey(ResourceKey<Registry<T>> registry, Class<?> type) {
 		return Cast.to(create(ResourceKey.class).identity().transformer(o -> toKey(registry, o)).describeType(TypeInfo.of(ResourceKey.class).withParams(TypeInfo.of(type))));
@@ -61,7 +61,8 @@ public class EventTargetType<T> {
 		}).describeType(typeInfo);
 	}
 
-	private static String toString(Object object) {
+	@Nullable
+	private static String toString(@Nullable Object object) {
 		if (object == null) {
 			return null;
 		}
@@ -70,38 +71,42 @@ public class EventTargetType<T> {
 		return s.isBlank() ? null : s;
 	}
 
-	private static ResourceLocation toResourceLocation(Object object) {
+	@Nullable
+	private static Identifier toIdentifier(@Nullable Object object) {
 		if (object == null) {
 			return null;
-		} else if (object instanceof ResourceLocation rl) {
+		} else if (object instanceof Identifier rl) {
 			return rl;
 		}
 
 		var s = object.toString();
-		return s.isBlank() ? null : ResourceLocation.tryParse(s);
+		return s.isBlank() ? null : Identifier.tryParse(s);
 	}
 
-	private static ResourceKey<?> toKey(ResourceKey registry, Object object) {
+	@SuppressWarnings({"rawtypes", "unchecked"})
+	@Nullable
+	private static ResourceKey<?> toKey(ResourceKey registry, @Nullable Object object) {
 		return switch (object) {
 			case null -> null;
 			case ResourceKey<?> rl -> rl;
 			case RegistryObjectKJS<?> wrk -> wrk.kjs$getKey();
-			case ResourceLocation rl -> ResourceKey.create(registry, rl);
+			case Identifier rl -> ResourceKey.create(registry, rl);
 			default -> {
 				var s = object.toString();
-				yield s.isBlank() ? null : ResourceKey.create(registry, ResourceLocation.parse(s));
+				yield s.isBlank() ? null : ResourceKey.create(registry, Identifier.parse(s));
 			}
 		};
 	}
 
-	private static ResourceKey<? extends Registry<?>> toRegistryKey(Object object) {
+	@Nullable
+	private static ResourceKey<? extends Registry<?>> toRegistryKey(@Nullable Object object) {
 		return switch (object) {
 			case null -> null;
 			case ResourceKey rl -> rl;
-			case ResourceLocation rl -> ResourceKey.createRegistryKey(rl);
+			case Identifier rl -> ResourceKey.createRegistryKey(rl);
 			default -> {
 				var s = object.toString();
-				yield s.isBlank() ? null : ResourceKey.createRegistryKey(ResourceLocation.parse(s));
+				yield s.isBlank() ? null : ResourceKey.createRegistryKey(Identifier.parse(s));
 			}
 		};
 	}

@@ -1,9 +1,10 @@
 package dev.latvian.mods.kubejs.core.mixin;
 
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.Multimap;
 import com.google.gson.JsonElement;
-import com.llamalad7.mixinextras.sugar.Local;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DynamicOps;
 import dev.latvian.mods.kubejs.CommonProperties;
 import dev.latvian.mods.kubejs.core.RecipeManagerKJS;
 import dev.latvian.mods.kubejs.core.ReloadableServerResourcesKJS;
@@ -12,15 +13,23 @@ import dev.latvian.mods.kubejs.net.SyncServerDataPayload;
 import dev.latvian.mods.kubejs.plugin.builtin.event.ServerEvents;
 import dev.latvian.mods.kubejs.recipe.RecipesKubeEvent;
 import dev.latvian.mods.kubejs.recipe.special.SpecialRecipeSerializerManager;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
 import dev.latvian.mods.kubejs.script.ScriptType;
+import dev.latvian.mods.kubejs.server.ServerScriptManager;
 import dev.latvian.mods.kubejs.util.Cast;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.MappedRegistry;
+import net.minecraft.resources.FileToIdConverter;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
-import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.crafting.RecipeMap;
+import net.neoforged.neoforge.resource.ContextAwareReloadListener;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -28,73 +37,91 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 @Mixin(value = RecipeManager.class, priority = 1100)
-public abstract class RecipeManagerMixin implements RecipeManagerKJS {
-	@Shadow
-	private Map<ResourceLocation, RecipeHolder<?>> byName;
+public abstract class RecipeManagerMixin extends ContextAwareReloadListener implements RecipeManagerKJS {
+	@Unique
+	private RecipeManager kjs$self() {
+		return (RecipeManager) (Object) this;
+	}
 
 	@Shadow
-	private Multimap<RecipeType<?>, RecipeHolder<?>> byType;
+	private RecipeMap recipes;
+
+	@Final
+	@Shadow
+	private HolderLookup.Provider registries;
 
 	@Unique
-	private ReloadableServerResourcesKJS kjs$resources;
+	private @Nullable ReloadableServerResourcesKJS kjs$resources;
 
-	@Unique
-	private RecipesKubeEvent kjs$event;
-
-	@Inject(
-		method = "apply(Ljava/util/Map;Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/util/profiling/ProfilerFiller;)V",
-		at = @At("HEAD")
+	@WrapOperation(
+		method = "prepare(Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/util/profiling/ProfilerFiller;)Lnet/minecraft/world/item/crafting/RecipeMap;",
+		at = @At(
+			value = "INVOKE",
+			target = "Lnet/minecraft/server/packs/resources/SimpleJsonResourceReloadListener;scanDirectoryWithModifier(Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/resources/FileToIdConverter;Lcom/mojang/serialization/DynamicOps;Lcom/mojang/serialization/Codec;Ljava/util/Map;Ljava/util/function/Consumer;)V"
+		)
 	)
-	private void customRecipesHead(Map<ResourceLocation, JsonElement> map, ResourceManager resourceManager, ProfilerFiller profiler, CallbackInfo ci) {
-		var manager = kjs$resources.kjs$getServerScriptManager();
-
-		for (var entry : manager.getRegistries().cachedRegistryTags.values()) {
-			if (entry.registry() == null || entry.lookup() == null) {
-				continue;
-			}
-
-			entry.registry().bindTags(Cast.to(entry.lookup().bindingMap()));
+	private void injectEventToPost(
+		ResourceManager manager,
+		FileToIdConverter lister,
+		DynamicOps<JsonElement> ops,
+		Codec<Recipe<?>> codec,
+		Map<Identifier, Recipe<?>> result,
+		Consumer<Map<Identifier, JsonElement>> jsonConsumer,
+		Operation<Void> original
+	) {
+		if (kjs$resources == null) {
+			return;
 		}
 
-		manager.recipeSchemaStorage.fireEvents(manager.getRegistries(), resourceManager);
+		var ssm = Objects.requireNonNull(kjs$resources.kjs$getServerScriptManager());
+
+		// TODO: i would like to be able to live without these two calls
+		for (var pending : kjs$resources.kjs$getPostponedTags()) {
+			pending.apply();
+		}
+
+		for (var pending : kjs$resources.kjs$getNewComponents()) {
+			pending.apply();
+		}
+
+		for (var entry : ssm.getRegistries().cachedRegistryTags.values()) {
+			if (entry.registry() instanceof MappedRegistry<?> mappedRegistry) {
+				mappedRegistry.bindTags(Cast.to(entry.lookup().bindingMap()));
+			}
+		}
+
+		ssm.recipeSchemaStorage.fireEvents(ssm.getRegistries(), manager);
 
 		SpecialRecipeSerializerManager.INSTANCE.reset();
 		ServerEvents.SPECIAL_RECIPES.post(ScriptType.SERVER, SpecialRecipeSerializerManager.INSTANCE);
 
-		if (ServerEvents.RECIPES.hasListeners()) {
-			ConsoleJS.SERVER.info("Processing recipes...");
-			kjs$event = new RecipesKubeEvent(manager, resourceManager);
-			kjs$event.post(this, map);
-		}
+		// this will end up calling the NF event which will post the kube event
+		ScopedValue.where(RecipesKubeEvent.INSTANCE, new RecipesKubeEvent(ssm)).run(() -> {
+			ScriptType.SERVER.console.info("Processing recipes...");
+			original.call(manager, lister, ops, codec, result, jsonConsumer);
+		});
 	}
 
 	@Inject(
-		method = "apply(Ljava/util/Map;Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/util/profiling/ProfilerFiller;)V",
-		at = @At(value = "INVOKE", target = "Lorg/slf4j/Logger;error(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V")
+		method = "apply(Lnet/minecraft/world/item/crafting/RecipeMap;Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/util/profiling/ProfilerFiller;)V",
+		at = @At("TAIL")
 	)
-	private void catchFailingRecipes(CallbackInfo ci, @Local Map.Entry<ResourceLocation, JsonElement> entry, @Local RuntimeException ex) {
-		if (kjs$event != null) {
-			kjs$event.handleFailedRecipe(entry.getKey(), entry.getValue(), ex);
-		}
-	}
-
-	@Inject(
-		method = "apply(Ljava/util/Map;Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/util/profiling/ProfilerFiller;)V",
-		at = @At(value = "TAIL")
-	)
-	private void addServerData(CallbackInfo ci) {
-		if (kjs$event != null) {
-			kjs$event.finishEvent();
-		}
-
-		kjs$event = null;
-
+	private void kjs$applyTail(RecipeMap recipeMap, ResourceManager resourceManager, ProfilerFiller profiler, CallbackInfo ci) {
 		if (!CommonProperties.get().serverOnly) {
-			kjs$getResources().kjs$getServerScriptManager().serverData = new SyncServerDataPayload(KubeServerData.collect());
+			kjs$getServerScriptManager().serverData = new SyncServerDataPayload(KubeServerData.collect());
 		}
+	}
+
+	@Override
+	@NullUnmarked
+	public ServerScriptManager kjs$getServerScriptManager() {
+		return kjs$resources != null ? kjs$resources.kjs$getServerScriptManager() : null;
 	}
 
 	@Override
@@ -103,26 +130,13 @@ public abstract class RecipeManagerMixin implements RecipeManagerKJS {
 	}
 
 	@Override
-	public ReloadableServerResourcesKJS kjs$getResources() {
-		return kjs$resources;
+	public void kjs$replaceRecipes(RecipeMap recipeMap) {
+		recipes = recipeMap;
+		ScriptType.SERVER.console.info("Loaded " + recipeMap.values().size() + " recipes");
 	}
 
 	@Override
-	public Map<ResourceLocation, RecipeHolder<?>> kjs$getRecipeIdMap() {
-		return byName;
-	}
-
-	@Override
-	public void kjs$replaceRecipes(Map<ResourceLocation, RecipeHolder<?>> map) {
-		byName = map;
-
-		var recipesByType = ImmutableMultimap.<RecipeType<?>, RecipeHolder<?>>builder();
-
-		for (var entry : map.entrySet()) {
-			recipesByType.put(entry.getValue().value().getType(), entry.getValue());
-		}
-
-		byType = recipesByType.build();
-		ConsoleJS.SERVER.info("Loaded " + byType.size() + " recipes");
+	public Collection<RecipeHolder<?>> kjs$getRecipes() {
+		return recipes.values();
 	}
 }

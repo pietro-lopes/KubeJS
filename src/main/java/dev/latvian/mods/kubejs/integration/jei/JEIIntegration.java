@@ -1,4 +1,5 @@
 package dev.latvian.mods.kubejs.integration.jei;
+/*
 
 import dev.latvian.mods.kubejs.item.ItemPredicate;
 import dev.latvian.mods.kubejs.recipe.viewer.RecipeViewerEntryType;
@@ -7,7 +8,9 @@ import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.ingredients.IIngredientType;
 import mezz.jei.api.neoforge.NeoForgeTypes;
 import net.neoforged.neoforge.fluids.crafting.FluidIngredient;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
+
+import java.util.List;
 
 public class JEIIntegration {
 	@Nullable
@@ -25,9 +28,9 @@ public class JEIIntegration {
 		if (type == RecipeViewerEntryType.ITEM) {
 			return ((ItemPredicate) type.wrapPredicate(cx, filter)).kjs$getStackArray();
 		} else if (type == RecipeViewerEntryType.FLUID) {
-			return ((FluidIngredient) type.wrapPredicate(cx, filter)).getStacks();
+			return new List[]{((FluidIngredient) type.wrapPredicate(cx, filter)).fluids()};
 		} else {
 			return new Object[0];
 		}
 	}
-}
+}*/

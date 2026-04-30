@@ -2,13 +2,14 @@ package dev.latvian.mods.kubejs.block.predicate;
 
 import dev.latvian.mods.kubejs.level.LevelBlock;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import org.jspecify.annotations.Nullable;
 
 public class BlockEntityPredicate implements BlockPredicate {
-	private final ResourceLocation id;
-	private BlockEntityPredicateDataCheck checkData;
+	private final Identifier id;
+	private @Nullable BlockEntityPredicateDataCheck checkData;
 
-	public BlockEntityPredicate(ResourceLocation i) {
+	public BlockEntityPredicate(Identifier i) {
 		id = i;
 	}
 

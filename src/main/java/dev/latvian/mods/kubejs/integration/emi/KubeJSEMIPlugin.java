@@ -1,4 +1,5 @@
 package dev.latvian.mods.kubejs.integration.emi;
+/*
 
 import dev.emi.emi.api.EmiEntrypoint;
 import dev.emi.emi.api.EmiPlugin;
@@ -11,7 +12,7 @@ import dev.latvian.mods.kubejs.plugin.builtin.event.RecipeViewerEvents;
 import dev.latvian.mods.kubejs.recipe.viewer.RecipeViewerEntryType;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.HashMap;
 import java.util.List;
@@ -27,14 +28,14 @@ public class KubeJSEMIPlugin implements EmiPlugin {
 		if (remote != null) {
 			var removedCategories = Set.copyOf(remote.removedCategories());
 			var globalRemovedRecipes = Set.copyOf(remote.removedGlobalRecipes());
-			var removedRecipes = new HashMap<ResourceLocation, Set<ResourceLocation>>();
+			var removedRecipes = new HashMap<Identifier, Set<Identifier>>();
 
 			for (var data : remote.categoryData()) {
 				removedRecipes.put(data.category(), Set.copyOf(data.removedRecipes()));
 			}
 
 			registry.removeRecipes(r -> {
-				var cat = r.getCategory().getId();
+				Object cat = r.getCategory().getId();
 
 				if (cat == null) {
 					return false;
@@ -44,7 +45,7 @@ public class KubeJSEMIPlugin implements EmiPlugin {
 					return true;
 				}
 
-				var id = r.getId();
+				Object id = r.getId();
 
 				if (id == null) {
 					return false;
@@ -115,3 +116,4 @@ public class KubeJSEMIPlugin implements EmiPlugin {
 		}
 	}
 }
+*/

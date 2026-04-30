@@ -2,6 +2,7 @@ package dev.latvian.mods.kubejs.level;
 
 import dev.latvian.mods.kubejs.core.BlockProviderKJS;
 import dev.latvian.mods.kubejs.core.InventoryKJS;
+import dev.latvian.mods.kubejs.item.ResourceHandlerInventoryWrapper;
 import dev.latvian.mods.kubejs.player.EntityArrayList;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.BlockWrapper;
 import dev.latvian.mods.kubejs.util.Cast;
@@ -9,18 +10,17 @@ import dev.latvian.mods.rhino.util.HideFromJS;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.Fireworks;
-import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.biome.Biomes;
@@ -29,9 +29,11 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.capabilities.Capabilities;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -50,12 +52,12 @@ public interface LevelBlock extends BlockProviderKJS {
 	}
 
 	@HideFromJS
-	default LevelBlock cache(BlockState state) {
+	default LevelBlock cache(@Nullable BlockState state) {
 		return this;
 	}
 
 	@HideFromJS
-	default LevelBlock cache(BlockEntity entity) {
+	default LevelBlock cache(@Nullable BlockEntity entity) {
 		return this;
 	}
 
@@ -63,8 +65,8 @@ public interface LevelBlock extends BlockProviderKJS {
 		return getLevel().dimension();
 	}
 
-	default ResourceLocation getDimension() {
-		return getDimensionKey().location();
+	default Identifier getDimension() {
+		return getDimensionKey().identifier();
 	}
 
 	default int getX() {
@@ -189,7 +191,7 @@ public interface LevelBlock extends BlockProviderKJS {
 
 	default String getEntityId() {
 		var entity = getEntity();
-		return entity == null ? "minecraft:air" : BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entity.getType()).toString();
+		return entity == null ? "minecraft:air" : entity.typeHolder().getRegisteredName();
 	}
 
 	@Nullable
@@ -208,8 +210,11 @@ public interface LevelBlock extends BlockProviderKJS {
 			var entity = getEntity();
 
 			if (entity != null) {
-				entity.loadWithComponents(tag, getLevel().registryAccess());
+				try (var reporter = new ProblemReporter.ScopedCollector(entity.problemPath(), LoggerFactory.getLogger("KubeJS"))) {
+					entity.loadWithComponents(TagValueInput.create(reporter, getLevel().registryAccess(), tag));
+				}
 			}
+
 		}
 	}
 
@@ -219,7 +224,7 @@ public interface LevelBlock extends BlockProviderKJS {
 		if (t == null) {
 			setEntityData(tag);
 		} else if (tag != null && !tag.isEmpty()) {
-			for (var s : tag.getAllKeys()) {
+			for (var s : tag.keySet()) {
 				t.put(s, tag.get(s));
 			}
 		}
@@ -247,8 +252,8 @@ public interface LevelBlock extends BlockProviderKJS {
 		return getLevel().canSeeSkyFromBelowWater(getPos());
 	}
 
-	default Explosion explode(ExplosionProperties properties) {
-		return getLevel().kjs$explode(getX() + 0.5D, getY() + 0.5D, getZ() + 0.5D, properties);
+	default void explode(ExplosionProperties properties) {
+		getLevel().kjs$explode(getX() + 0.5D, getY() + 0.5D, getZ() + 0.5D, properties);
 	}
 
 	@Nullable
@@ -280,21 +285,21 @@ public interface LevelBlock extends BlockProviderKJS {
 
 	@Nullable
 	default InventoryKJS getInventory() {
-		return getInventory(Direction.UP);
+		return getInventory(null);
 	}
 
 	@Nullable
-	default InventoryKJS getInventory(Direction facing) {
+	default InventoryKJS getInventory(@Nullable Direction facing) {
 		var entity = getEntity();
 
 		if (entity != null) {
-			var c = getLevel().getCapability(Capabilities.ItemHandler.BLOCK, getPos(), getBlockState(), getEntity(), facing);
+			var handler = getLevel().getCapability(Capabilities.Item.BLOCK, getPos(), getBlockState(), entity, facing);
 
-			if (c instanceof InventoryKJS inv) {
-				return inv;
-			} else if (entity instanceof InventoryKJS inv) {
-				return inv;
-			}
+			return switch (handler) {
+				case InventoryKJS inv -> inv;
+				case null -> entity instanceof InventoryKJS inv ? inv : null;
+				default -> new ResourceHandlerInventoryWrapper(handler);
+			};
 		}
 
 		return null;
@@ -302,7 +307,7 @@ public interface LevelBlock extends BlockProviderKJS {
 
 	default ItemStack getItem() {
 		var state = getBlockState();
-		return state.getBlock().getCloneItemStack(getLevel(), getPos(), state);
+		return state.getBlock().getCloneItemStack(getLevel(), getPos(), state, true, null);
 	}
 
 	default List<ItemStack> getDrops() {
@@ -345,37 +350,12 @@ public interface LevelBlock extends BlockProviderKJS {
 		return getPlayersInRadius(8D);
 	}
 
-	default ResourceLocation getBiomeId() {
+	default Identifier getBiomeId() {
 		var k = getLevel().getBiome(getPos()).getKey();
-		return k == null ? Biomes.PLAINS.location() : k.location();
+		return k == null ? Biomes.PLAINS.identifier() : k.identifier();
 	}
 
 	default String toBlockStateString() {
-		var id = kjs$getId();
-		var properties = getProperties();
-
-		if (properties.isEmpty()) {
-			return id;
-		}
-
-		var builder = new StringBuilder(id);
-		builder.append('[');
-
-		var first = true;
-
-		for (var entry : properties.entrySet()) {
-			if (first) {
-				first = false;
-			} else {
-				builder.append(',');
-			}
-
-			builder.append(entry.getKey());
-			builder.append('=');
-			builder.append(entry.getValue());
-		}
-
-		builder.append(']');
-		return builder.toString();
+		return BlockWrapper.toBlockStateString(kjs$getId(), getProperties());
 	}
 }

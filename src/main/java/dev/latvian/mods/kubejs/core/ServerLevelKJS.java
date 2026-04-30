@@ -12,9 +12,9 @@ public interface ServerLevelKJS extends LevelKJS, WithPersistentData {
 	}
 
 	@Override
-	default void kjs$spawnParticles(ParticleOptions options, boolean overrideLimiter, double x, double y, double z, double vx, double vy, double vz, int count, double speed) {
+	default void kjs$spawnParticles(ParticleOptions particle, boolean overrideLimiter, double x, double y, double z, double vx, double vy, double vz, int count, double speed) {
 		for (var player : kjs$self().players()) {
-			kjs$self().sendParticles(player, options, overrideLimiter, x, y, z, count, vx, vy, vz, speed);
+			kjs$self().sendParticles(player, particle, overrideLimiter, false, x, y, z, count, vx, vy, vz, speed);
 		}
 	}
 }

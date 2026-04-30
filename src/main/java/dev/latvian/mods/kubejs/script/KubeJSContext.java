@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.mojang.datafixers.util.Either;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.holder.HolderWrapper;
+import dev.latvian.mods.kubejs.plugin.ClassFilter;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugins;
 import dev.latvian.mods.kubejs.registry.RegistryType;
 import dev.latvian.mods.kubejs.util.ID;
@@ -21,7 +22,9 @@ import net.minecraft.core.Registry;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.TagKey;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Contract;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.AccessibleObject;
 import java.util.Collections;
@@ -30,16 +33,32 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
+/// KubeJS-specific Rhino [Context] that extends the JS runtime with Minecraft type coercions
+/// and enforces security boundaries.
+///
+/// Specifically, this class includes:
+///
+///   1. **Class filtering** [#visibleToScripts] and [#loadJavaClass] delegate to the
+///    [ClassFilter] set by the [ScriptManager], which may be used to hide internal
+/// 	classes from scripters. Importantly, reflective access through [reflected objects][AccessibleObject]
+/// 	or [ClassLoader] is also strictly forbidden and will throw an error!
+///   2. Convenient access to the current [registries][RegistryAccessContainer] and [logger][ConsoleJS].
+///   3. Automatic conversion to [Holder], [HolderSet] and other registry types when supported, which is
+/// 	*prioritized* over delegating to plugin type wrappers. Also adds automatic wrapping of
+/// 	nullable values to the Java [Optional] type.
+///   4. Support for [JsonObject] and [CompoundTag] to be created and accessed using JS object
+/// 	syntax in scripts, see also [#mapOf].
+///
 public class KubeJSContext extends Context {
 	public final KubeJSContextFactory kjsFactory;
 	public final Scriptable topLevelScope;
-	private Map<String, Either<NativeJavaClass, Boolean>> javaClassCache;
+	private @Nullable Map<String, Either<NativeJavaClass, Boolean>> javaClassCache;
 
 	public KubeJSContext(KubeJSContextFactory factory) {
 		super(factory);
 		this.kjsFactory = factory;
 		setApplicationClassLoader(KubeJS.class.getClassLoader());
-		this.topLevelScope = initStandardObjects(); // TODO: if this causes problems, revert to safe
+		this.topLevelScope = initStandardObjects();
 
 		var bindingsEvent = new BindingRegistry(this, topLevelScope);
 
@@ -114,10 +133,10 @@ public class KubeJSContext extends Context {
 	public Registry<?> lookupRegistry(TypeInfo type, Object from) {
 		var registryType = lookupRegistryType(type, from);
 
-		var registry = getRegistries().access().registry(registryType.key()).orElse(null);
+		var registry = getRegistries().lookup(registryType.key()).orElse(null);
 
 		if (registry == null) {
-			throw reportRuntimeError("Can't interpret '" + from + "' as '" + registryType.key().location() + "': registry not found", this);
+			throw reportRuntimeError("Can't interpret '" + from + "' as '" + registryType.key().identifier() + "': registry not found", this);
 		}
 
 		return registry;
@@ -166,26 +185,20 @@ public class KubeJSContext extends Context {
 			var reg = RegistryType.lookup(target);
 
 			if (reg != null) {
-				var registry = getRegistries().access().registry(reg.key()).orElse(null);
-
-				if (registry == null) {
-					throw reportRuntimeError("Can't interpret '" + from + "' as '" + reg.key().location() + "': registry not found", this);
-				}
-
-				var value = registry.get(ID.mc(from));
-
-				if (value != null) {
-					return value;
-				} else {
-					throw reportRuntimeError("Can't interpret '" + from + "' as '" + reg.key().location() + "': entry not found", this);
-				}
+				var registry = getRegistries()
+					.lookup(reg.key())
+					.orElseThrow(() -> reportRuntimeError("Can't interpret '%s' as '%s': registry not found".formatted(from, reg.key().identifier()), this))
+					.getOptional(ID.mc(from))
+					.orElseThrow(() -> reportRuntimeError("Can't interpret '%s' as '%s': entry not found".formatted(from, reg.key().identifier()), this));
 			}
 		}
 
 		return super.internalJsToJavaLast(from, target);
 	}
 
-	public NativeJavaClass loadJavaClass(String name, boolean error) {
+	@Contract("null, false -> null; null, true -> fail")
+	@NullUnmarked
+	public NativeJavaClass loadJavaClass(@Nullable String name, boolean error) {
 		if (name == null || name.equals("null") || name.isEmpty()) {
 			if (error) {
 				throw reportRuntimeError("Class name can't be empty!", this);
@@ -253,7 +266,7 @@ public class KubeJSContext extends Context {
 		if (from instanceof CompoundTag tag) {
 			var map = new LinkedHashMap<>();
 
-			for (var key : tag.getAllKeys()) {
+			for (var key : tag.keySet()) {
 				map.put(kTarget == TypeInfo.STRING ? key : String.valueOf(jsToJava(key, kTarget)), jsToJava(tag.get(key), vTarget));
 			}
 

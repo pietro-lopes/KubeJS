@@ -1,13 +1,15 @@
 package dev.latvian.mods.kubejs.block.predicate;
 
 import dev.latvian.mods.kubejs.level.LevelBlock;
+import dev.latvian.mods.kubejs.plugin.builtin.wrapper.BlockWrapper;
 import dev.latvian.mods.kubejs.util.Cast;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -19,41 +21,19 @@ public class BlockIDPredicate implements BlockPredicate {
 	public record PropertyObject(Property<?> property, Object value) {
 	}
 
-	private final ResourceLocation id;
+	private final Identifier id;
 	private final Map<String, String> properties;
-	private Block cachedBlock;
-	private List<PropertyObject> cachedProperties;
+	private @Nullable Block cachedBlock;
+	private @Nullable List<PropertyObject> cachedProperties;
 
-	public BlockIDPredicate(ResourceLocation i) {
+	public BlockIDPredicate(Identifier i) {
 		id = i;
 		properties = new HashMap<>();
 	}
 
 	@Override
 	public String toString() {
-		if (properties.isEmpty()) {
-			return id.toString();
-		}
-
-		var sb = new StringBuilder(id.toString());
-		sb.append('[');
-
-		var first = true;
-
-		for (var entry : properties.entrySet()) {
-			if (first) {
-				first = false;
-			} else {
-				sb.append(',');
-			}
-
-			sb.append(entry.getKey());
-			sb.append('=');
-			sb.append(entry.getValue());
-		}
-
-		sb.append(']');
-		return sb.toString();
+		return BlockWrapper.toBlockStateString(id.toString(), properties);
 	}
 
 	public BlockIDPredicate with(String key, String value) {
@@ -65,13 +45,8 @@ public class BlockIDPredicate implements BlockPredicate {
 
 	private Block getBlock() {
 		if (cachedBlock == null) {
-			cachedBlock = BuiltInRegistries.BLOCK.get(id);
-
-			if (cachedBlock == null) {
-				cachedBlock = Blocks.AIR;
-			}
+			cachedBlock = BuiltInRegistries.BLOCK.getValue(id);
 		}
-
 		return cachedBlock;
 	}
 

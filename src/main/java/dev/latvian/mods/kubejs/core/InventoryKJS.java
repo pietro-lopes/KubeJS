@@ -6,7 +6,7 @@ import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -69,7 +69,7 @@ public interface InventoryKJS {
 	}
 
 	default void kjs$clear() {
-		for (var i = kjs$getSlots(); i >= 0; i--) {
+		for (var i = kjs$getSlots() - 1; i >= 0; i--) {
 			if (kjs$isMutable()) {
 				kjs$setStackInSlot(i, ItemStack.EMPTY);
 			} else {
@@ -212,6 +212,7 @@ public interface InventoryKJS {
 		return list;
 	}
 
+	@Nullable
 	default Container kjs$asContainer() {
 		return null;
 	}

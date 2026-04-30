@@ -1,7 +1,7 @@
 package dev.latvian.mods.kubejs.client;
 
 import dev.latvian.mods.kubejs.DevProperties;
-import net.minecraft.Util;
+import net.minecraft.util.Util;
 
 import java.net.URI;
 import java.nio.file.Path;
@@ -22,7 +22,7 @@ public class EditorExt {
 
 	private static URI format(String scheme, Path path, int line, int column) {
 		return URI.create(scheme
-			.replace("{path}", path.toString())
+			.replace("{path}", path.toAbsolutePath().toUri().getRawPath())
 			.replace("{line}", String.valueOf(line))
 			.replace("{col}", String.valueOf(column))
 		);

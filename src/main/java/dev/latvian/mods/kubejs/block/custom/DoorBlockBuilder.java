@@ -8,9 +8,9 @@ import dev.latvian.mods.kubejs.generator.KubeAssetGenerator;
 import dev.latvian.mods.kubejs.generator.KubeDataGenerator;
 import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.rhino.util.ReturnsSelf;
-import net.minecraft.advancements.critereon.StatePropertiesPredicate;
+import net.minecraft.advancements.criterion.StatePropertiesPredicate;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.DoorBlock;
@@ -27,34 +27,35 @@ import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
 import net.minecraft.world.level.storage.loot.predicates.ExplosionCondition;
 import net.minecraft.world.level.storage.loot.predicates.LootItemBlockStatePropertyCondition;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
 
 @ReturnsSelf
 public class DoorBlockBuilder extends ShapedBlockBuilder {
-	public static final ResourceLocation[] DOOR_TAGS = {
+	public static final Identifier[] DOOR_TAGS = {
 		BlockTags.DOORS.location()
 	};
 
-	public static final ResourceLocation[] WOODEN_DOOR_TAGS = {
+	public static final Identifier[] WOODEN_DOOR_TAGS = {
 		BlockTags.WOODEN_DOORS.location()
 	};
 
-	private static final Map<String, ResourceLocation> MODELS = Map.of(
-		"top_right", ResourceLocation.withDefaultNamespace("block/door_top_right"),
-		"top_right_open", ResourceLocation.withDefaultNamespace("block/door_top_right_open"),
-		"top_left", ResourceLocation.withDefaultNamespace("block/door_top_left"),
-		"top_left_open", ResourceLocation.withDefaultNamespace("block/door_top_left_open"),
-		"bottom_right", ResourceLocation.withDefaultNamespace("block/door_bottom_right"),
-		"bottom_right_open", ResourceLocation.withDefaultNamespace("block/door_bottom_right_open"),
-		"bottom_left", ResourceLocation.withDefaultNamespace("block/door_bottom_left"),
-		"bottom_left_open", ResourceLocation.withDefaultNamespace("block/door_bottom_left_open")
+	private static final Map<String, Identifier> MODELS = Map.of(
+		"top_right", Identifier.withDefaultNamespace("block/door_top_right"),
+		"top_right_open", Identifier.withDefaultNamespace("block/door_top_right_open"),
+		"top_left", Identifier.withDefaultNamespace("block/door_top_left"),
+		"top_left_open", Identifier.withDefaultNamespace("block/door_top_left_open"),
+		"bottom_right", Identifier.withDefaultNamespace("block/door_bottom_right"),
+		"bottom_right_open", Identifier.withDefaultNamespace("block/door_bottom_right_open"),
+		"bottom_left", Identifier.withDefaultNamespace("block/door_bottom_left"),
+		"bottom_left_open", Identifier.withDefaultNamespace("block/door_bottom_left_open")
 	);
 
 	public transient BlockSetType behaviour;
 
-	public DoorBlockBuilder(ResourceLocation i) {
+	public DoorBlockBuilder(Identifier i) {
 		super(i);
 		renderType(BlockRenderType.CUTOUT);
 		noValidSpawns(true);
@@ -181,10 +182,11 @@ public class DoorBlockBuilder extends ShapedBlockBuilder {
 	}
 
 	@Override
+	@Nullable
 	public LootTable generateLootTable(KubeDataGenerator generator) {
-		var blockDrops = drops == null ? BlockDrops.createDefault(get().asItem().getDefaultInstance()) : drops.get();
+		var blockDrops = drops == null ? BlockDrops.createDefault(get().asItem()) : drops.get();
 
-		if (blockDrops.items().length == 0) {
+		if (blockDrops.items().length == 0 && blockDrops.defaultItem() == null) {
 			return null;
 		}
 
@@ -195,6 +197,12 @@ public class DoorBlockBuilder extends ShapedBlockBuilder {
 		}
 
 		pool.when(ExplosionCondition.survivesExplosion());
+
+		if (blockDrops.defaultItem() != null) {
+			var item = LootItem.lootTableItem(blockDrops.defaultItem());
+			item.when(new LootItemBlockStatePropertyCondition.Builder(get()).setProperties(StatePropertiesPredicate.Builder.properties().hasProperty(DoorBlock.HALF, DoubleBlockHalf.LOWER)));
+			pool.add(item);
+		}
 
 		for (var drop : blockDrops.items()) {
 			var item = LootItem.lootTableItem(drop.getItem());

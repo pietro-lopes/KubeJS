@@ -2,19 +2,22 @@ package dev.latvian.mods.kubejs.recipe.component;
 
 import com.google.gson.JsonObject;
 import com.mojang.serialization.Codec;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.recipe.KubeRecipe;
 import dev.latvian.mods.kubejs.recipe.KubeRecipeEventOps;
 import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.rhino.type.TypeInfo;
+import net.minecraft.resources.ResourceKey;
+import org.jspecify.annotations.Nullable;
 
 public class NestedRecipeComponent implements RecipeComponent<KubeRecipe> {
-	public static final RecipeComponentType<KubeRecipe> RECIPE = RecipeComponentType.unit(KubeJS.id("nested_recipe"), new NestedRecipeComponent());
+	private static final ResourceKey<RecipeComponentType<?>> TYPE = RecipeComponentType.builtin("nested_recipe");
+
+	public static final NestedRecipeComponent RECIPE = new NestedRecipeComponent();
 
 	@Override
-	public RecipeComponentType<?> type() {
-		return RECIPE;
+	public ResourceKey<RecipeComponentType<?>> type() {
+		return TYPE;
 	}
 
 	@Override
@@ -28,7 +31,7 @@ public class NestedRecipeComponent implements RecipeComponent<KubeRecipe> {
 	}
 
 	@Override
-	public KubeRecipe wrap(RecipeScriptContext cx, Object from) {
+	public KubeRecipe wrap(RecipeScriptContext cx, @Nullable Object from) {
 		if (from instanceof KubeRecipe r) {
 			return KubeRecipeEventOps.MARK_SYNTHETIC.apply(r);
 		} else if (from instanceof JsonObject json && json.has("type")) {
@@ -39,12 +42,12 @@ public class NestedRecipeComponent implements RecipeComponent<KubeRecipe> {
 	}
 
 	@Override
-	public boolean hasPriority(RecipeMatchContext cx, Object from) {
+	public boolean hasPriority(RecipeMatchContext cx, @Nullable Object from) {
 		return from instanceof KubeRecipe || from instanceof JsonObject json && json.has("type");
 	}
 
 	@Override
 	public String toString() {
-		return RECIPE.toString();
+		return RecipeComponentType.builtin("nested_recipe").toString();
 	}
 }

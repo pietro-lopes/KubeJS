@@ -16,7 +16,9 @@ import net.minecraft.util.valueproviders.ClampedNormalInt;
 import net.minecraft.util.valueproviders.ConstantFloat;
 import net.minecraft.util.valueproviders.ConstantInt;
 import net.minecraft.util.valueproviders.FloatProvider;
+import net.minecraft.util.valueproviders.FloatProviders;
 import net.minecraft.util.valueproviders.IntProvider;
+import net.minecraft.util.valueproviders.IntProviders;
 import net.minecraft.util.valueproviders.UniformFloat;
 import net.minecraft.util.valueproviders.UniformInt;
 import net.minecraft.world.entity.Entity;
@@ -24,7 +26,7 @@ import net.minecraft.world.level.storage.loot.providers.number.BinomialDistribut
 import net.minecraft.world.level.storage.loot.providers.number.NumberProvider;
 import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -37,19 +39,19 @@ import static dev.latvian.mods.kubejs.plugin.builtin.wrapper.StringUtilsWrapper.
 import static dev.latvian.mods.kubejs.plugin.builtin.wrapper.StringUtilsWrapper.tryParseInt;
 
 public interface MiscWrappers {
-	static IntProvider wrapIntProvider(Context cx, Object o) {
+	static IntProvider wrapIntProvider(Context cx, @Nullable Object o) {
 		return tryWrapIntProvider(cx, o)
 			.getOrThrow(error -> new KubeRuntimeException("Failed to read IntProvider from %s: %s".formatted(o, error))
 				.source(SourceLine.of(cx)));
 	}
 
-	static FloatProvider wrapFloatProvider(Context cx, Object o) {
+	static FloatProvider wrapFloatProvider(Context cx, @Nullable Object o) {
 		return tryWrapFloatProvider(cx, o)
 			.getOrThrow(error -> new KubeRuntimeException("Failed to read FloatProvider from %s: %s".formatted(o, error))
 				.source(SourceLine.of(cx)));
 	}
 
-	static NumberProvider wrapNumberProvider(Context cx, Object o) {
+	static NumberProvider wrapNumberProvider(Context cx, @Nullable Object o) {
 		return tryWrapNumberProvider(cx, o)
 			.getOrThrow(error -> new KubeRuntimeException("Failed to read NumberProvider from %s: %s".formatted(o, error))
 				.source(SourceLine.of(cx)));
@@ -81,7 +83,7 @@ public interface MiscWrappers {
 		};
 	}
 
-	private static DataResult<IntProvider> tryWrapIntProvider(Context cx, Object o) {
+	private static DataResult<IntProvider> tryWrapIntProvider(Context cx, @Nullable Object o) {
 		return switch (o) {
 			case Number n -> success(ConstantInt.of(n.intValue()));
 			case List<?> list -> switch (list.size()) {
@@ -102,7 +104,7 @@ public interface MiscWrappers {
 				} else if (hasBounds(map)) {
 					yield parseIntBounds(map).map(v -> v);
 				} else {
-					yield IntProvider.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, map))
+					yield IntProviders.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, map))
 						.mapError(error -> "Failed to decode IntProvider from %s: %s".formatted(map, error));
 				}
 			}
@@ -110,7 +112,7 @@ public interface MiscWrappers {
 		};
 	}
 
-	private static DataResult<FloatProvider> tryWrapFloatProvider(Context cx, Object o) {
+	private static DataResult<FloatProvider> tryWrapFloatProvider(Context cx, @Nullable Object o) {
 		return switch (o) {
 			case Number n -> success(ConstantFloat.of(n.floatValue()));
 			case List<?> list -> switch (list.size()) {
@@ -124,7 +126,7 @@ public interface MiscWrappers {
 		};
 	}
 
-	private static DataResult<NumberProvider> tryWrapNumberProvider(Context cx, Object o) {
+	private static DataResult<NumberProvider> tryWrapNumberProvider(Context cx, @Nullable Object o) {
 		return switch (o) {
 			case Number n -> {
 				var f = n.floatValue();
@@ -185,7 +187,7 @@ public interface MiscWrappers {
 		} else if (hasBounds(m)) {
 			return parseIntBounds(m).map(v -> v);
 		} else {
-			return IntProvider.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, m)).map(v -> v).mapError(error -> "Failed to decode IntProvider from %s: %s".formatted(m, error));
+			return IntProviders.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, m)).map(v -> v).mapError(error -> "Failed to decode IntProvider from %s: %s".formatted(m, error));
 		}
 	}
 
@@ -208,7 +210,7 @@ public interface MiscWrappers {
 		} else if (hasBounds(m)) {
 			return parseFloatBounds(m).map(v -> v);
 		} else {
-			return FloatProvider.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, m))
+			return FloatProviders.CODEC.parse(RegistryAccessContainer.of(cx).nbt(), NBTWrapper.wrapCompound(cx, m))
 				.mapError(error -> "Failed to decode FloatProvider from %s: %s".formatted(m, error));
 		}
 	}
@@ -231,18 +233,19 @@ public interface MiscWrappers {
 	}
 
 	private static IntProvider toClamped(IntProvider source, UniformInt clampTo) {
-		return ClampedInt.of(source, clampTo.getMinValue(), clampTo.getMaxValue());
+		return ClampedInt.of(source, clampTo.minInclusive(), clampTo.maxInclusive());
 	}
 
 	private static IntProvider toClampedNormal(int mean, int deviation, UniformInt clampTo) {
-		return ClampedNormalInt.of(mean, deviation, clampTo.getMinValue(), clampTo.getMaxValue());
+		return ClampedNormalInt.of(mean, deviation, clampTo.minInclusive(), clampTo.maxInclusive());
 	}
 
 	private static FloatProvider toClampedNormal(float mean, float deviation, UniformFloat clampTo) {
-		return ClampedNormalFloat.of(mean, deviation, clampTo.getMinValue(), clampTo.getMaxValue());
+		return ClampedNormalFloat.of(mean, deviation, clampTo.min(), clampTo.max());
 	}
 
-	static Path wrapPath(Context cx, Object o) {
+	@Nullable
+	static Path wrapPath(Context cx, @Nullable Object o) {
 		try {
 			if (o instanceof Path p) {
 				return KubeJSPaths.verifyFilePath(p);
@@ -256,7 +259,8 @@ public interface MiscWrappers {
 		}
 	}
 
-	static File wrapFile(Context cx, Object o) {
+	@Nullable
+	static File wrapFile(Context cx, @Nullable Object o) {
 		try {
 			if (o instanceof File f) {
 				return KubeJSPaths.verifyFilePath(f.toPath()).toFile();

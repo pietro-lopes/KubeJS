@@ -7,7 +7,7 @@ import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import dev.latvian.mods.rhino.util.HideFromJS;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public class TargetedEventHandler<E> extends EventHandler {
-	protected Map<Object, EventHandlerContainer[]> extraEventContainers;
+	protected @Nullable Map<Object, @Nullable EventHandlerContainer[]> extraEventContainers;
 
 	TargetedEventHandler(EventGroup g, String n, ScriptTypePredicate st, EventTargetType<E> target, Supplier<Class<? extends KubeEvent>> e) {
 		super(g, n, st, e);
@@ -54,9 +54,7 @@ public class TargetedEventHandler<E> extends EventHandler {
 		return eventContainers != null || extraId != null && extraEventContainers != null && extraEventContainers.containsKey(extraId);
 	}
 
-	/**
-	 * @see TargetedEventHandler#post(ScriptTypeHolder, E, KubeEvent)
-	 */
+	/// @see TargetedEventHandler#post(ScriptTypeHolder, E, KubeEvent)
 	public EventResult post(KubeEvent event, @Nullable E extraId) {
 		if (scriptTypePredicate instanceof ScriptTypeHolder type) {
 			return postInternal(type, extraId, event);
@@ -65,15 +63,13 @@ public class TargetedEventHandler<E> extends EventHandler {
 		}
 	}
 
-	/**
-	 * @return EventResult that can contain an object. What previously returned true on {@link KubeEvent#cancel(Context)} ()} now returns {@link EventResult#interruptFalse()}
-	 * @see KubeEvent#cancel(Context)
-	 * @see KubeEvent#success(Context)
-	 * @see KubeEvent#exit(Context)
-	 * @see KubeEvent#cancel(Context, Object)
-	 * @see KubeEvent#success(Context, Object)
-	 * @see KubeEvent#exit(Context, Object)
-	 */
+	/// @return EventResult that can contain an object. What previously returned true on [KubeEvent#cancel(Context)] now returns [EventResult#interruptFalse()]
+	/// @see KubeEvent#cancel(Context)
+	/// @see KubeEvent#success(Context)
+	/// @see KubeEvent#exit(Context)
+	/// @see KubeEvent#cancel(Context, Object)
+	/// @see KubeEvent#success(Context, Object)
+	/// @see KubeEvent#exit(Context, Object)
 	public EventResult post(ScriptTypeHolder type, @Nullable E extraId, KubeEvent event) {
 		return postInternal(type, extraId, event);
 	}
@@ -102,9 +98,9 @@ public class TargetedEventHandler<E> extends EventHandler {
 	}
 
 	@Override
-	protected EventHandlerContainer[] createMap(@Nullable Object extraId) {
+	protected @Nullable EventHandlerContainer[] createMap(@Nullable Object extraId) {
 		if (extraId == null) {
-			return super.createMap(extraId);
+			return super.createMap(null);
 		}
 
 		if (extraEventContainers == null) {

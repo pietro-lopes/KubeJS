@@ -1,163 +1,202 @@
 package dev.latvian.mods.kubejs.block.entity;
 
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.DirectionWrapper;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
-import net.neoforged.neoforge.capabilities.BlockCapability;
 import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.energy.EnergyStorage;
-import net.neoforged.neoforge.energy.IEnergyStorage;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.TransferPreconditions;
+import net.neoforged.neoforge.transfer.energy.EnergyHandler;
+import net.neoforged.neoforge.transfer.energy.EnergyHandlerUtil;
+import net.neoforged.neoforge.transfer.transaction.SnapshotJournal;
+import net.neoforged.neoforge.transfer.transaction.TransactionContext;
 
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.EnumSet;
+import java.util.Set;
 
-public class EnergyStorageAttachment implements BlockEntityAttachment {
-	public static final BlockEntityAttachmentType TYPE = new BlockEntityAttachmentType(KubeJS.id("energy_storage"), Factory.class);
-
-	public record Factory(int capacity, Optional<Integer> maxReceive, Optional<Integer> maxExtract, Optional<Integer> autoOutput) implements BlockEntityAttachmentFactory {
-		@Override
-		public BlockEntityAttachment create(BlockEntityAttachmentInfo info, KubeBlockEntity entity) {
-			int rx = Math.max(0, maxReceive.orElse(0));
-			int tx = Math.max(0, maxExtract.orElse(0));
-			int auto = Math.max(0, autoOutput.orElse(0));
-			return new EnergyStorageAttachment(entity, capacity, rx, tx, auto, auto > 0 ? info.directions().isEmpty() ? DirectionWrapper.VALUES : info.directions().toArray(new Direction[0]) : DirectionWrapper.NONE);
+public class EnergyStorageAttachment {
+	public record Config(String id, EnumSet<Direction> directions, int capacity, int maxReceive, int maxExtract, int autoOutput) {
+		public Direction[] resolveAutoOutputDirections() {
+			if (autoOutput <= 0) {
+				return DirectionWrapper.NONE;
+			}
+			return directions.isEmpty() ? DirectionWrapper.VALUES : directions.toArray(new Direction[0]);
 		}
 
-		@Override
 		public boolean isTicking() {
-			return autoOutput.isPresent() && autoOutput.get() > 0;
-		}
-
-		@Override
-		public List<BlockCapability<?, ?>> getCapabilities() {
-			return List.of(Capabilities.EnergyStorage.BLOCK);
+			return autoOutput > 0;
 		}
 	}
 
-	public static class Wrapped extends EnergyStorage {
-		private final EnergyStorageAttachment attachment;
+	public static Config createConfig(String id, Set<Direction> directions, int capacity, int maxReceive, int maxExtract, int autoOutput) {
+		return new Config(
+			id,
+			directions == null || directions.isEmpty() ? DirectionWrapper.EMPTY_SET : EnumSet.copyOf(directions),
+			Math.max(0, capacity),
+			Math.max(0, maxReceive),
+			Math.max(0, maxExtract),
+			Math.max(0, autoOutput)
+		);
+	}
 
-		public Wrapped(EnergyStorageAttachment attachment, int capacity, int maxReceive, int maxExtract) {
-			super(capacity, maxReceive, maxExtract);
-			this.attachment = attachment;
+	public static class Wrapped extends SnapshotJournal<Integer> implements EnergyHandler {
+		private final KubeBlockEntity entity;
+		private final String id;
+		private final int capacity;
+		private final int maxReceive;
+		private final int maxExtract;
+		private final int autoOutput;
+		private final Direction[] autoOutputDirections;
+		private int energy;
+
+		public Wrapped(KubeBlockEntity entity, Config config) {
+			this.entity = entity;
+			this.id = config.id();
+			this.capacity = config.capacity();
+			this.maxReceive = config.maxReceive();
+			this.maxExtract = config.maxExtract();
+			this.autoOutput = config.autoOutput();
+			this.autoOutputDirections = config.resolveAutoOutputDirections();
+			this.energy = 0;
+		}
+
+		public int getEnergyStored() {
+			return energy;
 		}
 
 		public void setEnergyStored(int energy) {
 			this.energy = Mth.clamp(energy, 0, capacity);
+			syncToAttachment();
 		}
 
 		public int addEnergy(int add, boolean simulate) {
 			int i = Mth.clamp(this.capacity - this.energy, 0, add);
-
 			if (!simulate && i > 0) {
-				energy += i;
-				attachment.entity.save();
+				this.energy += i;
+				syncToAttachment();
 			}
-
 			return i;
 		}
 
 		public int removeEnergy(int remove, boolean simulate) {
-			int i = Math.max(energy, remove);
-
+			int i = Math.min(this.energy, remove);
 			if (!simulate && i > 0) {
-				energy -= i;
-				attachment.entity.save();
+				this.energy -= i;
+				syncToAttachment();
 			}
-
 			return i;
 		}
 
 		public boolean useEnergy(int use, boolean simulate) {
-			if (energy >= use) {
+			if (this.energy >= use) {
 				if (!simulate) {
-					energy -= use;
-					attachment.entity.save();
+					this.energy -= use;
+					syncToAttachment();
 				}
-
 				return true;
 			}
-
 			return false;
 		}
 
 		@Override
-		public int extractEnergy(int toExtract, boolean simulate) {
-			int s = super.extractEnergy(toExtract, simulate);
-
-			if (s > 0 && !simulate && !attachment.entity.getLevel().isClientSide()) {
-				attachment.entity.save();
-			}
-
-			return s;
+		public long getAmountAsLong() {
+			return energy;
 		}
 
 		@Override
-		public int receiveEnergy(int toReceive, boolean simulate) {
-			int s = super.receiveEnergy(toReceive, simulate);
+		public long getCapacityAsLong() {
+			return capacity;
+		}
 
-			if (s > 0 && !simulate && !attachment.entity.getLevel().isClientSide()) {
-				attachment.entity.save();
+		@Override
+		public int insert(int amount, TransactionContext transaction) {
+			TransferPreconditions.checkNonNegative(amount);
+			if (amount == 0 || maxReceive == 0 || capacity == 0) {
+				return 0;
 			}
 
-			return s;
-		}
-	}
+			updateSnapshots(transaction);
 
-	private final KubeBlockEntity entity;
-	public final Wrapped energyStorage;
-	public final int autoOutput;
-	public final Direction[] autoOutputDirections;
-
-	public EnergyStorageAttachment(KubeBlockEntity entity, int capacity, int maxReceive, int maxExtract, int autoOutput, Direction[] autoOutputDirections) {
-		this.entity = entity;
-		this.energyStorage = new Wrapped(this, capacity, maxReceive, maxExtract);
-		this.autoOutput = autoOutput;
-		this.autoOutputDirections = autoOutputDirections;
-	}
-
-	@Override
-	public Object getWrappedObject() {
-		return energyStorage;
-	}
-
-	@Override
-	@Nullable
-	public <CAP, SRC> CAP getCapability(BlockCapability<CAP, SRC> capability) {
-		if (capability == Capabilities.EnergyStorage.BLOCK) {
-			return (CAP) energyStorage;
+			int toInsert = Math.min(amount, maxReceive);
+			int inserted = Math.min(toInsert, capacity - energy);
+			if (inserted > 0) {
+				energy += inserted;
+			}
+			return inserted;
 		}
 
-		return null;
-	}
+		@Override
+		public int extract(int amount, TransactionContext transaction) {
+			TransferPreconditions.checkNonNegative(amount);
+			if (amount == 0 || maxExtract == 0) {
+				return 0;
+			}
 
-	@Override
-	public void serverTick() {
-		if (autoOutputDirections.length > 0 && autoOutput > 0) {
-			var list = new ArrayList<IEnergyStorage>(1);
+			updateSnapshots(transaction);
 
-			for (var dir : autoOutputDirections) {
-				var c = entity.getLevel().getCapability(Capabilities.EnergyStorage.BLOCK, entity.getBlockPos().relative(dir), dir.getOpposite());
+			int toExtract = Math.min(amount, maxExtract);
+			int extracted = Math.min(toExtract, energy);
+			if (extracted > 0) {
+				energy -= extracted;
+			}
+			return extracted;
+		}
 
-				if (c != null && c != energyStorage) {
-					list.add(c);
+		@Override
+		protected Integer createSnapshot() {
+			return energy;
+		}
+
+		@Override
+		protected void revertToSnapshot(Integer snapshot) {
+			energy = snapshot == null ? 0 : snapshot;
+		}
+
+		@Override
+		protected void onRootCommit(Integer originalState) {
+			if (originalState == null || originalState != energy) {
+				syncToAttachment();
+				if (entity.getLevel() != null && !entity.getLevel().isClientSide()) {
+					entity.save();
 				}
 			}
+		}
 
-			if (!list.isEmpty()) {
-				int draw = Math.min(autoOutput, energyStorage.getEnergyStored()) / list.size();
+		public void syncFromAttachment() {
+			var map = entity.getData(KubeJSAttachmentTypes.ENERGY.get());
+			energy = map.getOrDefault(id, 0);
+		}
 
-				if (draw > 0) {
-					for (var c : list) {
-						int e = energyStorage.extractEnergy(draw, true);
+		public void syncToAttachment() {
+			var map = entity.getData(KubeJSAttachmentTypes.ENERGY.get());
+			if (energy > 0) {
+				map.put(id, energy);
+			} else {
+				map.remove(id);
+			}
+		}
 
-						if (e > 0) {
-							energyStorage.extractEnergy(c.receiveEnergy(e, false), false);
-						} else {
-							break;
+		public void serverTick() {
+			if (autoOutputDirections.length > 0 && autoOutput > 0) {
+				var list = new ArrayList<EnergyHandler>(1);
+
+				for (var dir : autoOutputDirections) {
+					var c = entity.getLevel().getCapability(Capabilities.Energy.BLOCK, entity.getBlockPos().relative(dir), dir.getOpposite());
+					if (c != null && c != this) {
+						list.add(c);
+					}
+				}
+
+				if (!list.isEmpty()) {
+					int stored = energy;
+					int draw = Math.min(autoOutput, stored) / list.size();
+
+					if (draw > 0) {
+						for (var c : list) {
+							int moved = EnergyHandlerUtil.move(this, c, draw, null);
+							if (moved <= 0) {
+								break;
+							}
 						}
 					}
 				}

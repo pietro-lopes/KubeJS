@@ -11,18 +11,18 @@ import java.util.function.Consumer;
 public class KubeJSResourcePackFinder implements RepositorySource {
 	@Override
 	public void loadPacks(Consumer<Pack> nameToPackMap) {
-		if (KubeJSPaths.FIRST_RUN.getValue()) {
+		if (KubeJSPaths.FIRST_RUN.get()) {
 			var blockTextures = KubeJSPaths.dir(KubeJSPaths.ASSETS.resolve("kubejs/textures/block"));
 			var itemTextures = KubeJSPaths.dir(KubeJSPaths.ASSETS.resolve("kubejs/textures/item"));
 
-			try (var in = Files.newInputStream(KubeJS.thisMod.getModInfo().getOwningFile().getFile().findResource("data", "kubejs", "example_block_texture.png"));
+			try (var in = Files.newInputStream(KubeJS.thisMod.getModInfo().getOwningFile().getFile().getFilePath().resolve("data", "kubejs", "example_block_texture.png"));
 				 var out = Files.newOutputStream(blockTextures.resolve("example_block.png"))) {
 				in.transferTo(out);
 			} catch (Exception ex) {
 				ex.printStackTrace();
 			}
 
-			try (var in = Files.newInputStream(KubeJS.thisMod.getModInfo().getOwningFile().getFile().findResource("data", "kubejs", "example_item_texture.png"));
+			try (var in = Files.newInputStream(KubeJS.thisMod.getModInfo().getOwningFile().getFile().getFilePath().resolve("data", "kubejs", "example_item_texture.png"));
 				 var out = Files.newOutputStream(itemTextures.resolve("example_item.png"))) {
 				in.transferTo(out);
 			} catch (Exception ex) {

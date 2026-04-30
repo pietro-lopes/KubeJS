@@ -10,12 +10,13 @@ import dev.latvian.mods.kubejs.server.ServerScriptManager;
 import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.util.context.ContextMap;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeSerializer;
+import net.minecraft.world.item.crafting.display.SlotDisplayContext;
 
 @RemapPrefixForJS("kjs$")
 public interface RecipeHolderKJS extends RecipeLikeKJS {
@@ -29,7 +30,7 @@ public interface RecipeHolderKJS extends RecipeLikeKJS {
 
 	@Override
 	default String kjs$getGroup() {
-		return kjs$getRecipe().getGroup();
+		return kjs$getRecipe().group();
 	}
 
 	@Override
@@ -37,8 +38,8 @@ public interface RecipeHolderKJS extends RecipeLikeKJS {
 	}
 
 	@Override
-	default ResourceLocation kjs$getOrCreateId() {
-		return kjs$self().id();
+	default Identifier kjs$getOrCreateId() {
+		return kjs$self().id().identifier();
 	}
 
 	@Override
@@ -60,8 +61,8 @@ public interface RecipeHolderKJS extends RecipeLikeKJS {
 	@Override
 	default boolean hasInput(RecipeMatchContext cx, ReplacementMatchInfo match) {
 		if (match.match() instanceof ItemMatch m) {
-			for (var in : kjs$getRecipe().getIngredients()) {
-				if (m.matches(cx, in, match.exact())) {
+			for (var ingredient : kjs$getRecipe().placementInfo().ingredients()) {
+				if (!ingredient.isEmpty() && ingredient.kjs$canBeUsedForMatching() && m.matches(cx, ingredient, match.exact())) {
 					return true;
 				}
 			}
@@ -78,11 +79,19 @@ public interface RecipeHolderKJS extends RecipeLikeKJS {
 	@Override
 	default boolean hasOutput(RecipeMatchContext cx, ReplacementMatchInfo match) {
 		if (match.match() instanceof ItemMatch m) {
-			var result = kjs$getRecipe().getResultItem(cx.registries().access());
-			//noinspection ConstantValue
-			return result != null && result != ItemStack.EMPTY && !result.isEmpty() && m.matches(cx, result, match.exact());
-		}
+			var displayContext = new ContextMap.Builder()
+				.withOptionalParameter(SlotDisplayContext.REGISTRIES, cx.registries())
+				.create(SlotDisplayContext.CONTEXT);
 
+			var stream = kjs$getRecipe().display().stream()
+				.flatMap(display -> display.result().resolveForStacks(displayContext).stream())
+				.toList();
+			for (var stack : stream) {
+				if (!stack.isEmpty() && m.matches(cx, stack, match.exact())) {
+					return true;
+				}
+			}
+		}
 		return false;
 	}
 

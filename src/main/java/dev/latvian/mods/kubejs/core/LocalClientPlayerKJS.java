@@ -13,9 +13,9 @@ import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
-import net.neoforged.neoforge.network.PacketDistributor;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.resources.Identifier;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import org.jspecify.annotations.Nullable;
 
 @RemapPrefixForJS("kjs$")
 public interface LocalClientPlayerKJS extends ClientPlayerKJS {
@@ -55,7 +55,7 @@ public interface LocalClientPlayerKJS extends ClientPlayerKJS {
 	@Override
 	default void kjs$sendData(String channel, @Nullable CompoundTag data) {
 		if (!channel.isEmpty()) {
-			PacketDistributor.sendToServer(new SendDataFromClientPayload(channel, data));
+			ClientPacketDistributor.sendToServer(new SendDataFromClientPayload(channel, data));
 		}
 	}
 
@@ -73,11 +73,11 @@ public interface LocalClientPlayerKJS extends ClientPlayerKJS {
 	@Override
 	default void kjs$notify(NotificationToastData notification) {
 		var mc = Minecraft.getInstance();
-		mc.getToasts().addToast(new NotificationToast(mc, notification));
+		mc.getToastManager().addToast(new NotificationToast(mc, notification));
 	}
 
 	@Override
-	default void kjs$setActivePostShader(@Nullable ResourceLocation id) {
+	default void kjs$setActivePostShader(@Nullable Identifier id) {
 		var sessionData = KubeSessionData.of(kjs$self().connection);
 
 		if (sessionData != null) {

@@ -12,34 +12,36 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @Mixin(Entity.class)
 @RemapPrefixForJS("kjs$")
 public abstract class EntityMixin implements EntityKJS {
 	@Shadow
+	private Level level;
+
+	@Shadow
 	public abstract void playerTouch(Player arg);
 
 	@Unique
-	private CompoundTag kjs$persistentData;
+	private @Nullable CompoundTag kjs$persistentData;
 
 	@Override
 	public CompoundTag kjs$getPersistentData() {
@@ -55,19 +57,17 @@ public abstract class EntityMixin implements EntityKJS {
 	public abstract CompoundTag getPersistentData();
 
 	@Inject(method = "saveWithoutId", at = @At("RETURN"))
-	private void saveKJS(CompoundTag tag, CallbackInfoReturnable<CompoundTag> ci) {
+	private void saveKJS(ValueOutput output, CallbackInfo ci) {
 		if (kjs$persistentData != null && !kjs$persistentData.isEmpty()) {
-			tag.put("KubeJSPersistentData", kjs$persistentData);
+			output.store("KubeJSPersistentData", CompoundTag.CODEC, kjs$persistentData);
 		}
 	}
 
 	@Inject(method = "load", at = @At("RETURN"))
-	private void loadKJS(CompoundTag tag, CallbackInfo ci) {
-		if (tag.contains("KubeJSPersistentData")) {
-			kjs$persistentData = tag.getCompound("KubeJSPersistentData");
-		} else {
-			kjs$persistentData = null;
-		}
+	private void loadKJS(ValueInput input, CallbackInfo ci) {
+		kjs$persistentData = input
+			.read("KubeJSPersistentData", CompoundTag.CODEC)
+			.orElse(null);
 	}
 
 	@Override
@@ -134,16 +134,13 @@ public abstract class EntityMixin implements EntityKJS {
 	public abstract void setDeltaMovement(double x, double y, double z);
 
 	@Shadow
-	@RemapForJS("setPositionAndRotation")
-	public abstract void moveTo(double x, double y, double z, float yaw, float pitch);
+	public abstract void setRot(float yaw, float pitch);
 
 	@Shadow
 	@RemapForJS("addMotion")
 	public abstract void push(double x, double y, double z);
 
-	/**
-	 * Replaced in JS by {@link EntityKJS#kjs$getPassengers()}.
-	 */
+	/// Replaced in JS by [EntityKJS#kjs$getPassengers()].
 	@Shadow
 	@HideFromJS
 	public abstract List<Entity> getPassengers();
@@ -152,9 +149,7 @@ public abstract class EntityMixin implements EntityKJS {
 	@RemapForJS("isOnSameTeam")
 	public abstract boolean isAlliedTo(Entity e);
 
-	/**
-	 * KubeJS adds {@link EntityKJS#kjs$getFacing()} which also can specify whether the entity is looking down or up.
-	 */
+	/// KubeJS adds [EntityKJS#kjs$getFacing()] which also can specify whether the entity is looking down or up.
 	@Shadow
 	@RemapForJS("getHorizontalFacing")
 	public abstract Direction getDirection();
@@ -163,12 +158,10 @@ public abstract class EntityMixin implements EntityKJS {
 	@RemapForJS("extinguish")
 	public abstract void extinguishFire();
 
-	/**
-	 * Replaced by
-	 */
+	/// Replaced in JS by [EntityKJS#kjs$damage]
 	@Shadow
 	@HideFromJS
-	public abstract boolean hurt(DamageSource source, float hp);
+	public abstract void hurt(DamageSource source, float damage);
 
 	// The remaps:
 	// distanceToSqr(double x, double y, double z) - remains as is
@@ -176,9 +169,7 @@ public abstract class EntityMixin implements EntityKJS {
 	// distanceToSqr(Entity entity) - remapped to distanceToEntitySqr
 	// distanceToBlockSqr(BlockPos block) is added by EntityKJS
 
-	/**
-	 * {@link EntityKJS#kjs$getType()} returns a string in JS.
-	 */
+	/// [EntityKJS#kjs$getType()] returns a string in JS.
 	@Shadow
 	@RemapForJS("getEntityType")
 	public abstract EntityType<?> getType();
@@ -201,47 +192,29 @@ public abstract class EntityMixin implements EntityKJS {
 	@Info("Measures the distance of entity to another entity.")
 	public abstract float distanceTo(Entity arg);
 
-	/**
-	 * Replaced in JS by {@link EntityKJS#kjs$teleportTo(double, double, double)}.
-	 */
-	@Shadow
-	@HideFromJS
-	public abstract void teleportTo(double x, double y, double z);
-
-	/**
-	 * Hidden, most similar equivalent usable by JS is
-	 * {@link EntityKJS#kjs$teleportToLevel(ServerLevel, double, double, double, float, float)}.
-	 */
-	@Shadow
-	@HideFromJS
-	public abstract boolean teleportTo(ServerLevel level, double x, double y, double z, Set<RelativeMovement> relativeMovements, float yaw, float pitch);
-
-	/**
-	 * Replaced in JS by {@link EntityKJS#kjs$getLevel()}.
-	 */
+	/// Replaced in JS by [EntityKJS#kjs$getLevel()].
 	@Shadow
 	@HideFromJS
 	public abstract Level level();
 
-	/**
-	 * Disambiguates {@link Entity#spawnAtLocation(ItemStack)} in JS.
-	 */
 	@Shadow
 	@HideFromJS
-	public abstract ItemEntity spawnAtLocation(ItemLike item);
+	public abstract @Nullable ItemEntity spawnAtLocation(ServerLevel level, ItemStack itemStack);
 
-	/**
-	 * Disambiguates {@link Entity#spawnAtLocation(ItemStack, float)} in JS.
-	 */
 	@Shadow
 	@HideFromJS
-	public abstract ItemEntity spawnAtLocation(ItemLike item, int offsetY);
+	public abstract @Nullable ItemEntity spawnAtLocation(ServerLevel level, ItemStack itemStack, Vec3 offset);
 
-
-	/**
-	 * Disambiguates {@link Entity#moveTo(Vec3, float, float)} in JS.
-	 */
 	@Shadow
-	@RemapForJS("moveToBlockPos")
-	public abstract void moveTo(BlockPos pos, float yRot, float xRot);
+	@HideFromJS
+	public abstract ItemEntity spawnAtLocation(ServerLevel level, ItemLike resource);
+
+	@Shadow
+	@HideFromJS
+	public abstract ItemEntity spawnAtLocation(ServerLevel level, ItemStack itemStack, float offset);
+
+	/// Disambiguates [Entity#snapTo(Vec3, float, float)] in JS.
+	@Shadow
+	@RemapForJS("snapToBlockPos")
+	public abstract void snapTo(BlockPos spawnPos, float yRot, float xRot);
 }

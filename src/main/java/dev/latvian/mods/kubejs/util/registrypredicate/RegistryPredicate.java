@@ -13,7 +13,7 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.TagKey;
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.function.Predicate;
@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
 @FunctionalInterface
 @SuppressWarnings({"rawtypes", "unchecked"})
 public interface RegistryPredicate<T> extends Predicate<Holder<T>> {
-	static RegistryPredicate<?> of(Context cx, Object from, TypeInfo target) {
+	static RegistryPredicate<?> of(Context cx, @Nullable Object from, TypeInfo target) {
 		return switch (from) {
 			case null -> EntireRegistryPredicate.FALSE;
 			case RegistryPredicate<?> p -> p;
@@ -35,11 +35,11 @@ public interface RegistryPredicate<T> extends Predicate<Holder<T>> {
 				var predicate = (Predicate) cx.jsToJava(fn, t.shouldConvert() ? TypeInfo.RAW_PREDICATE.withParams(t) : TypeInfo.RAW_PREDICATE);
 				yield predicate::test;
 			}
-			default -> new RegistryHolderPredicate<>(new Holder.Direct<>(from));
+			default -> new RegistryHolderPredicate<>(Holder.direct(from));
 		};
 	}
 
-	private static @NotNull RegistryPredicate<?> ofString(TypeInfo target, String s) {
+	private static RegistryPredicate<?> ofString(TypeInfo target, String s) {
 		return switch (s) {
 			case "*" -> EntireRegistryPredicate.TRUE;
 			case "-" -> EntireRegistryPredicate.FALSE;
@@ -63,10 +63,10 @@ public interface RegistryPredicate<T> extends Predicate<Holder<T>> {
 				var id = ID.mc(s);
 
 				if (reg != null) {
-					var registry = BuiltInRegistries.REGISTRY.get((ResourceKey) reg.key());
+					Registry registry = BuiltInRegistries.REGISTRY.getValue((ResourceKey) reg.key());
 
 					if (registry != null) {
-						var opt = registry.getHolder(id);
+						var opt = registry.get(id);
 
 						if (opt.isPresent()) {
 							yield new RegistryHolderPredicate<>((Holder) opt.get());
@@ -80,10 +80,10 @@ public interface RegistryPredicate<T> extends Predicate<Holder<T>> {
 	}
 
 	default List<Holder.Reference<T>> getHolders(Registry<T> registry) {
-		return registry.holders().filter(this).toList();
+		return registry.listElements().filter(this).toList();
 	}
 
 	default List<T> getValues(Registry<T> registry) {
-		return registry.holders().filter(this).map(Holder::value).toList();
+		return registry.listElements().filter(this).map(Holder::value).toList();
 	}
 }

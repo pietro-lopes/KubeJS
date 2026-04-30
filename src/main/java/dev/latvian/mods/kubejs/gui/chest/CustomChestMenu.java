@@ -1,14 +1,15 @@
 package dev.latvian.mods.kubejs.gui.chest;
 
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
+import java.util.Objects;
 
 public class CustomChestMenu extends AbstractContainerMenu {
 	public static final MenuType[] TYPES = {
@@ -35,6 +36,8 @@ public class CustomChestMenu extends AbstractContainerMenu {
 		}
 
 		if (data.playerSlots) {
+			Objects.requireNonNull(data.capturedInventory);
+
 			for (int y = 0; y < 3; y++) {
 				for (int x = 0; x < 9; x++) {
 					addSlot(new Slot(data.capturedInventory, x + y * 9 + 9, 8 + x * 18, 103 + y * 18 + k));
@@ -63,23 +66,22 @@ public class CustomChestMenu extends AbstractContainerMenu {
 	}
 
 	@Override
-	public void clicked(int slot, int button, ClickType clickType, Player player) {
+	public void clicked(int slot, int button, ContainerInput input, Player player) {
 		if (data.playerSlots && slot >= data.rows * 9) {
 			if (data.inventoryClicked != null && slot >= 0 && slot < slots.size()) {
-				data.inventoryClicked.onClick(new ChestMenuInventoryClickEvent(getSlot(slot), clickType, button));
+				data.inventoryClicked.onClick(new ChestMenuInventoryClickEvent(getSlot(slot), input, button));
 			}
-
 			return;
 		}
 
 		if (slot >= data.rows * 9) {
-			super.clicked(slot, button, clickType, player);
+			super.clicked(slot, button, input, player);
 		}
 
 		try {
-			data.handleClick(slot, clickType, button);
+			data.handleClick(slot, input, button);
 		} catch (Exception ex) {
-			ConsoleJS.SERVER.error("Error handling chest gui click", ex);
+			ScriptType.SERVER.console.error("Error handling chest gui click", ex);
 		}
 
 		broadcastFullState();

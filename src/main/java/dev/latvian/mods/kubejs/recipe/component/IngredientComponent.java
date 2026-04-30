@@ -1,19 +1,26 @@
 package dev.latvian.mods.kubejs.recipe.component;
 
 import com.mojang.serialization.Codec;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.plugin.builtin.wrapper.IngredientWrapper;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.ItemMatch;
 import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
 import dev.latvian.mods.kubejs.util.OpsContainer;
 import dev.latvian.mods.rhino.type.TypeInfo;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
+import org.jspecify.annotations.Nullable;
 
-public record IngredientComponent(RecipeComponentType<?> type, Codec<Ingredient> codec, boolean allowEmpty) implements RecipeComponent<Ingredient> {
-	public static final RecipeComponentType<Ingredient> INGREDIENT = RecipeComponentType.unit(KubeJS.id("ingredient"), type -> new IngredientComponent(type, Ingredient.CODEC_NONEMPTY, false));
-	public static final RecipeComponentType<Ingredient> OPTIONAL_INGREDIENT = RecipeComponentType.unit(KubeJS.id("optional_ingredient"), type -> new IngredientComponent(type, Ingredient.CODEC, true));
+public record IngredientComponent(ResourceKey<RecipeComponentType<?>> type, Codec<Ingredient> codec, boolean allowEmpty) implements RecipeComponent<Ingredient> {
+	public static final IngredientComponent INGREDIENT = new IngredientComponent(
+		RecipeComponentType.builtin("ingredient"),
+		Ingredient.CODEC, false
+	);
+	public static final IngredientComponent OPTIONAL_INGREDIENT = new IngredientComponent(
+		RecipeComponentType.builtin("optional_ingredient"),
+		Ingredient.CODEC, true
+	);
 
 	@Override
 	public TypeInfo typeInfo() {
@@ -21,7 +28,7 @@ public record IngredientComponent(RecipeComponentType<?> type, Codec<Ingredient>
 	}
 
 	@Override
-	public boolean hasPriority(RecipeMatchContext cx, Object from) {
+	public boolean hasPriority(RecipeMatchContext cx, @Nullable Object from) {
 		return IngredientWrapper.isIngredientLike(from);
 	}
 
@@ -36,20 +43,24 @@ public record IngredientComponent(RecipeComponentType<?> type, Codec<Ingredient>
 			return true;
 		}
 
-		var stacks = value.getItems();
+		if (value.isCustom()) {
+			return value.items().noneMatch(holder -> {
+				var item = holder.value();
+				return !item.getDefaultInstance().isEmpty() && item.asItem() != Items.BARRIER;
+			});
+		}
 
-		if (stacks.length == 0) {
+		var stacks = value.getValues();
+		if (stacks.size() == 0) {
 			return true;
 		}
 
 		int count = 0;
-
 		for (var stack : stacks) {
-			if (!stack.isEmpty() && stack.getItem() != Items.BARRIER) {
+			if (!stack.value().getDefaultInstance().isEmpty() && stack.value().asItem() != Items.BARRIER) {
 				count++;
 			}
 		}
-
 		return count == 0;
 	}
 

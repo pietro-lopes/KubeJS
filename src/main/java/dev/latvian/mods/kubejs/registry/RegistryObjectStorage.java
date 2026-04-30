@@ -5,15 +5,14 @@ import dev.latvian.mods.kubejs.util.Cast;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.material.Fluid;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -26,9 +25,9 @@ public final class RegistryObjectStorage<T> implements Iterable<BuilderBase<? ex
 	private static final Map<ResourceKey<? extends Registry<?>>, RegistryObjectStorage<?>> MAP = new Reference2ObjectOpenHashMap<>();
 	public static final List<BuilderBase<?>> ALL_BUILDERS = new LinkedList<>();
 
-	public static final Codec<RegistryObjectStorage<?>> CODEC = ResourceLocation.CODEC.xmap(rl -> RegistryObjectStorage.of(ResourceKey.createRegistryKey(rl)), ri -> ri.key.location());
+	public static final Codec<RegistryObjectStorage<?>> CODEC = Identifier.CODEC.xmap(rl -> RegistryObjectStorage.of(ResourceKey.createRegistryKey(rl)), ri -> ri.key.identifier());
 
-	public static <T> RegistryObjectStorage<T> of(ResourceKey<Registry<T>> key) {
+	public static <T> RegistryObjectStorage<T> of(ResourceKey<? extends Registry<T>> key) {
 		synchronized (LOCK) {
 			return Cast.to(MAP.computeIfAbsent(key, RegistryObjectStorage::new));
 		}
@@ -40,15 +39,14 @@ public final class RegistryObjectStorage<T> implements Iterable<BuilderBase<? ex
 	public static final RegistryObjectStorage<BlockEntityType<?>> BLOCK_ENTITY = of(Registries.BLOCK_ENTITY_TYPE);
 	public static final RegistryObjectStorage<FluidType> FLUID_TYPE = of(NeoForgeRegistries.Keys.FLUID_TYPES);
 
-	public final ResourceKey<Registry<T>> key;
-	public final Map<ResourceLocation, BuilderBase<? extends T>> objects;
+	public final ResourceKey<? extends Registry<T>> key;
+	public final Map<Identifier, BuilderBase<? extends T>> objects;
 
 	private RegistryObjectStorage(ResourceKey key) {
 		this.key = key;
 		this.objects = new LinkedHashMap<>();
 	}
 
-	@NotNull
 	@Override
 	public Iterator<BuilderBase<? extends T>> iterator() {
 		return objects.values().iterator();
@@ -56,6 +54,6 @@ public final class RegistryObjectStorage<T> implements Iterable<BuilderBase<? ex
 
 	@Override
 	public String toString() {
-		return key.location().toString();
+		return key.identifier().toString();
 	}
 }

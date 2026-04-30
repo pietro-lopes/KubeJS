@@ -2,57 +2,72 @@ package dev.latvian.mods.kubejs.core.mixin;
 
 import dev.latvian.mods.kubejs.core.GameRulesKJS;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
-import net.minecraft.world.level.GameRules;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.gamerules.GameRule;
+import net.minecraft.world.level.gamerules.GameRuleTypeVisitor;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 @Mixin(GameRules.class)
 @RemapPrefixForJS("kjs$")
 public abstract class GameRulesMixin implements GameRulesKJS {
 	@Shadow
-	public abstract <T extends GameRules.Value<T>> T getRule(GameRules.Key<T> key);
+	public abstract <T> T get(GameRule<T> gameRule);
+
+	@Shadow
+	public abstract <T> void set(GameRule<T> gameRule, T value, @Nullable MinecraftServer server);
+
+	@Shadow
+	public abstract void visitGameRuleTypes(GameRuleTypeVisitor visitor);
 
 	@Unique
-	private Map<String, GameRules.Key<?>> kjs$keyCache;
+	private @Nullable Map<String, GameRule<?>> kjs$ruleCache;
 
-	@Nullable
 	@Unique
-	private GameRules.Key<?> kjs$getKey(String rule) {
-		if (kjs$keyCache == null) {
-			kjs$keyCache = new HashMap<>();
-
-			GameRules.visitGameRuleTypes(new GameRules.GameRuleTypeVisitor() {
-				@Override
-				public <T extends GameRules.Value<T>> void visit(GameRules.Key<T> key, GameRules.Type<T> type) {
-					kjs$keyCache.put(key.toString(), key);
-				}
-			});
+	private void kjs$initCache() {
+		if (kjs$ruleCache != null) {
+			return;
 		}
 
-		return kjs$keyCache.get(rule);
+		kjs$ruleCache = new HashMap<>();
+
+		visitGameRuleTypes(new GameRuleTypeVisitor() {
+			@Override
+			public <T> void visit(GameRule<T> gameRule) {
+				kjs$ruleCache.put(gameRule.id(), gameRule);
+				kjs$ruleCache.put(gameRule.getIdentifier().toString(), gameRule);
+			}
+		});
+	}
+
+	@Unique
+	@Nullable
+	private GameRule<?> kjs$getCachedRule(String rule) {
+		kjs$initCache();
+		return Objects.requireNonNull(kjs$ruleCache).get(rule);
 	}
 
 	@Override
 	@Nullable
-	public GameRules.Value<?> kjs$get(String rule) {
-		var key = kjs$getKey(rule);
-		return key == null ? null : getRule(key);
+	public MinecraftServer kjs$getServer() {
+		return ServerLifecycleHooks.getCurrentServer();
 	}
 
 	@Override
-	public void kjs$set(String rule, String value) {
-		var key = kjs$getKey(rule);
-		var r = key == null ? null : getRule(key);
-
-		if (r != null) {
-			r.deserialize(value);
-			r.onChanged(ServerLifecycleHooks.getCurrentServer());
+	@Nullable
+	public GameRule<?> kjs$getRule(String rule) {
+		GameRule<?> cached = kjs$getCachedRule(rule);
+		if (cached != null) {
+			return cached;
 		}
+		return GameRulesKJS.super.kjs$getRule(rule);
 	}
 }

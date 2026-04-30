@@ -2,12 +2,10 @@ package dev.latvian.mods.kubejs.server.tag;
 
 import dev.latvian.mods.kubejs.DevProperties;
 import dev.latvian.mods.kubejs.error.EmptyTagTargetException;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.util.RegExpKJS;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagEntry;
-import net.minecraft.tags.TagLoader;
-import net.minecraft.util.ExtraCodecs;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -15,14 +13,14 @@ import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
-public interface TagEventFilter {
+public sealed interface TagEventFilter {
 	static TagEventFilter of(TagKubeEvent event, Object o) {
 		if (o instanceof TagEventFilter f) {
 			return f;
 		} else if (o instanceof Collection<?> list) {
 			var filters = list.stream()
 				.map(o1 -> of(event, o1))
-				.flatMap(TagEventFilter::unwrap)
+				.flatMap(TagEventFilter::flatten)
 				.filter(f -> f != Empty.INSTANCE)
 				.toList();
 
@@ -38,9 +36,9 @@ public interface TagEventFilter {
 
 			if (!s.isEmpty()) {
 				return switch (s.charAt(0)) {
-					case '#' -> new Tag(event.get(ResourceLocation.parse(s.substring(1))));
+					case '#' -> new Tag(event.get(Identifier.parse(s.substring(1))));
 					case '@' -> new Namespace(s.substring(1));
-					default -> new ID(ResourceLocation.parse(s));
+					default -> new ID(Identifier.parse(s));
 				};
 			}
 
@@ -49,91 +47,70 @@ public interface TagEventFilter {
 	}
 
 	static TagEventFilter unwrap(TagKubeEvent event, Object[] array) {
-		var filter = array.length == 1 ? of(event, array[0]) : of(event, Arrays.asList(array));
-
-		/*
-		if (filter.isEmpty()) {
-			var msg = "No matches found for filter %s!".formatted(filter);
-
-			if (DevProperties.get().strictTags) {
-				throw new EmptyTagTargetException(msg);
-			} else if (DevProperties.get().logSkippedTags) {
-				ConsoleJS.SERVER.warn(msg);
-			}
-		}
-		 */
-
-		return filter;
+		return array.length == 1 ? of(event, array[0]) : of(event, Arrays.asList(array));
 	}
 
-	boolean testElementId(ResourceLocation id);
+	boolean test(Identifier id);
 
-	default boolean testTagOrElementLocation(ExtraCodecs.TagOrElementLocation element) {
-		return !element.tag() && testElementId(element.id());
-	}
-
-	default Stream<TagEventFilter> unwrap() {
+	default Stream<TagEventFilter> flatten() {
 		return Stream.of(this);
 	}
 
-	default int add(TagWrapper wrapper) {
-		int count = 0;
+	default boolean add(TagWrapper wrapper) {
+		boolean changed = false;
+		var builder = wrapper.builder();
 
-		for (var id : wrapper.event.getElementIds()) {
-			if (testElementId(id)) {
-				wrapper.entries.add(new TagLoader.EntryWithSource(TagEntry.element(id), TagKubeEvent.SOURCE));
-				count++;
+		for (var id : wrapper.event().getElementIds()) {
+			if (test(id)) {
+				builder.add(TagEntry.element(id));
+				changed = true;
 			}
 		}
 
-		return count;
+		return changed;
 	}
 
-	default int remove(TagWrapper wrapper) {
-		int count = 0;
-		var itr = wrapper.entries.iterator();
+	default boolean remove(TagWrapper wrapper) {
+		boolean changed = false;
+		var builder = wrapper.builder();
 
-		while (itr.hasNext()) {
-			var it = itr.next();
-
-			if (!it.entry().tag && testElementId(it.entry().id)) {
-				itr.remove();
-				count++;
+		for (var id : wrapper.event().getElementIds()) {
+			if (test(id)) {
+				builder.remove(TagEntry.optionalElement(id));
+				changed = true;
 			}
 		}
 
-		return count;
+		return changed;
 	}
 
-	class Empty implements TagEventFilter {
-		public static final Empty INSTANCE = new Empty();
+	final class Empty implements TagEventFilter {
+		static final Empty INSTANCE = new Empty();
+
+		private Empty() {
+		}
 
 		@Override
-		public boolean testElementId(ResourceLocation resourceLocation) {
+		public boolean test(Identifier id) {
 			return false;
 		}
 
 		@Override
-		public boolean testTagOrElementLocation(ExtraCodecs.TagOrElementLocation element) {
+		public boolean add(TagWrapper wrapper) {
 			return false;
 		}
 
 		@Override
-		public int add(TagWrapper wrapper) {
-			return 0;
-		}
-
-		@Override
-		public int remove(TagWrapper wrapper) {
-			return 0;
+		public boolean remove(TagWrapper wrapper) {
+			return false;
 		}
 	}
 
-	record Or(List<TagEventFilter> filters) implements TagEventFilter {
+	record Or(List<TagEventFilter> selectors) implements TagEventFilter {
 		@Override
-		public boolean testElementId(ResourceLocation resourceLocation) {
-			for (var filter : filters) {
-				if (filter.testElementId(resourceLocation)) {
+		public boolean test(Identifier id) {
+			for (var selector : selectors) {
+				if (selector.test(id)) {
 					return true;
 				}
 			}
@@ -142,114 +119,105 @@ public interface TagEventFilter {
 		}
 
 		@Override
-		public boolean testTagOrElementLocation(ExtraCodecs.TagOrElementLocation element) {
-			for (var filter : filters) {
-				if (filter.testTagOrElementLocation(element)) {
-					return true;
-				}
-			}
-
-			return false;
+		public Stream<TagEventFilter> flatten() {
+			return selectors.stream();
 		}
 
 		@Override
-		public Stream<TagEventFilter> unwrap() {
-			return filters.stream();
+		public boolean add(TagWrapper wrapper) {
+			boolean changed = false;
+
+			for (var selector : selectors) {
+				changed |= selector.add(wrapper);
+			}
+
+			return changed;
 		}
 
 		@Override
-		public int add(TagWrapper wrapper) {
-			int count = 0;
+		public boolean remove(TagWrapper wrapper) {
+			boolean changed = false;
 
-			for (var filter : filters) {
-				count += filter.add(wrapper);
+			for (var selector : selectors) {
+				changed |= selector.remove(wrapper);
 			}
 
-			return count;
-		}
-
-		@Override
-		public int remove(TagWrapper wrapper) {
-			int count = 0;
-
-			for (var filter : filters) {
-				count += filter.remove(wrapper);
-			}
-
-			return count;
+			return changed;
 		}
 	}
 
-	record ID(ResourceLocation id) implements TagEventFilter {
+	record ID(Identifier id) implements TagEventFilter {
 		@Override
-		public boolean testElementId(ResourceLocation id) {
+		public boolean test(Identifier id) {
 			return this.id.equals(id);
 		}
 
 		@Override
-		public int add(TagWrapper wrapper) {
-			if (wrapper.event.getElementIds().contains(id)) {
-				wrapper.entries.add(new TagLoader.EntryWithSource(TagEntry.element(id), TagKubeEvent.SOURCE));
-				return 1;
-			} else {
-				var msg = "No such element %s in registry %s".formatted(id, wrapper.event.registryKey.location());
-
-				if (DevProperties.get().strictTags) {
-					throw new EmptyTagTargetException(msg);
-				} else if (DevProperties.get().logSkippedTags) {
-					ConsoleJS.SERVER.warn(msg);
-				}
-
-				return 0;
+		public boolean add(TagWrapper wrapper) {
+			if (wrapper.event().hasElement(id)) {
+				wrapper.builder().add(TagEntry.element(id));
+				return true;
 			}
+
+			var msg = "No such element %s in registry %s".formatted(id, wrapper.event().registryKey.identifier());
+
+			if (DevProperties.get().strictTags) {
+				throw new EmptyTagTargetException(msg);
+			} else if (DevProperties.get().logSkippedTags) {
+				ScriptType.SERVER.console.warn(msg);
+			}
+
+			return false;
+		}
+
+		@Override
+		public boolean remove(TagWrapper wrapper) {
+			if (wrapper.event().hasElement(id)) {
+				wrapper.builder().remove(TagEntry.element(id));
+				return true;
+			}
+
+			var msg = "No such element %s in registry %s".formatted(id, wrapper.event().registryKey.identifier());
+
+			if (DevProperties.get().strictTags) {
+				throw new EmptyTagTargetException(msg);
+			} else if (DevProperties.get().logSkippedTags) {
+				ScriptType.SERVER.console.warn(msg);
+			}
+
+			return false;
 		}
 	}
 
 	record Tag(TagWrapper tag) implements TagEventFilter {
 		@Override
-		public boolean testElementId(ResourceLocation id) {
+		public boolean test(Identifier id) {
 			return false;
 		}
 
 		@Override
-		public boolean testTagOrElementLocation(ExtraCodecs.TagOrElementLocation element) {
-			return element.tag() && this.tag.id.equals(element.id());
+		public boolean add(TagWrapper wrapper) {
+			wrapper.builder().add(TagEntry.tag(tag.id()));
+			return true;
 		}
 
 		@Override
-		public int add(TagWrapper wrapper) {
-			wrapper.entries.add(new TagLoader.EntryWithSource(TagEntry.tag(tag.id), TagKubeEvent.SOURCE));
-			return 1;
-		}
-
-		@Override
-		public int remove(TagWrapper wrapper) {
-			int count = 0;
-			var itr = wrapper.entries.iterator();
-
-			while (itr.hasNext()) {
-				var it = itr.next();
-
-				if (it.entry().tag && it.entry().id.equals(tag.id)) {
-					itr.remove();
-					count++;
-				}
-			}
-
-			return count;
+		public boolean remove(TagWrapper wrapper) {
+			wrapper.builder().remove(TagEntry.optionalTag(tag.id()));
+			return true;
 		}
 	}
 
 	record Namespace(String namespace) implements TagEventFilter {
 		@Override
-		public boolean testElementId(ResourceLocation id) {
+		public boolean test(Identifier id) {
 			return id.getNamespace().equals(namespace);
 		}
 	}
 
 	record RegEx(Pattern pattern) implements TagEventFilter {
 		@Override
-		public boolean testElementId(ResourceLocation id) {
+		public boolean test(Identifier id) {
 			return pattern.matcher(id.toString()).find();
 		}
 	}

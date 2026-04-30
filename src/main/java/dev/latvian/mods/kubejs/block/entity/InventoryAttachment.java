@@ -1,46 +1,65 @@
 package dev.latvian.mods.kubejs.block.entity;
 
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.core.InventoryKJS;
 import dev.latvian.mods.kubejs.item.ItemPredicate;
-import net.minecraft.core.HolderLookup;
+import dev.latvian.mods.kubejs.level.LevelBlock;
+import dev.latvian.mods.kubejs.plugin.builtin.wrapper.DirectionWrapper;
+import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Containers;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.capabilities.BlockCapability;
-import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.items.ItemStackHandler;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.world.level.Level;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemStacksResourceHandler;
+import org.jspecify.annotations.Nullable;
 
-import java.util.List;
-import java.util.Optional;
+import java.util.EnumSet;
+import java.util.Set;
 
-public class InventoryAttachment implements BlockEntityAttachment {
-	public static final BlockEntityAttachmentType TYPE = new BlockEntityAttachmentType(KubeJS.id("inventory"), Factory.class);
-
-	public record Factory(int width, int height, Optional<ItemPredicate> inputFilter) implements BlockEntityAttachmentFactory {
-		@Override
-		public BlockEntityAttachment create(BlockEntityAttachmentInfo info, KubeBlockEntity entity) {
-			return new InventoryAttachment(entity, width, height, inputFilter.orElse(null));
-		}
-
-		@Override
-		public List<BlockCapability<?, ?>> getCapabilities() {
-			return List.of(Capabilities.ItemHandler.BLOCK);
+public class InventoryAttachment {
+	public record Config(String id, EnumSet<Direction> directions, int width, int height, @Nullable ItemPredicate inputFilter) {
+		public int size() {
+			return width * height;
 		}
 	}
 
-	public static class Wrapped extends ItemStackHandler implements InventoryKJS {
-		protected final InventoryAttachment attachment;
+	public static Config createConfig(String id, Set<Direction> directions, int width, int height, @Nullable ItemPredicate inputFilter) {
+		return new Config(
+			id,
+			directions == null || directions.isEmpty() ? DirectionWrapper.EMPTY_SET : EnumSet.copyOf(directions),
+			Math.max(1, width),
+			Math.max(1, height),
+			inputFilter
+		);
+	}
 
-		public Wrapped(InventoryAttachment attachment) {
-			super(attachment.width * attachment.height);
-			this.attachment = attachment;
+	public static void onRemove(ServerLevel level, KubeBlockEntity blockEntity) {
+		for (var entry : blockEntity.inventoryWrappers.values()) {
+			Containers.dropContents(level, blockEntity.getBlockPos(), entry.stacks());
+		}
+	}
+
+	public static class Wrapped extends ItemStacksResourceHandler implements InventoryKJS {
+		protected final KubeBlockEntity entity;
+		protected final String id;
+		protected final int width;
+		protected final int height;
+		protected final @Nullable ItemPredicate inputFilter;
+		protected final NonNullList<ItemStack> stacks;
+
+		public Wrapped(KubeBlockEntity entity, Config config) {
+			this(entity, config, NonNullList.withSize(config.size(), ItemStack.EMPTY));
+		}
+
+		public Wrapped(KubeBlockEntity entity, Config config, NonNullList<ItemStack> stacks) {
+			super(stacks);
+			this.entity = entity;
+			this.id = config.id();
+			this.width = config.width();
+			this.height = config.height();
+			this.inputFilter = config.inputFilter();
+			this.stacks = stacks;
 		}
 
 		public NonNullList<ItemStack> stacks() {
@@ -48,93 +67,152 @@ public class InventoryAttachment implements BlockEntityAttachment {
 		}
 
 		@Override
-		protected void onContentsChanged(int slot) {
-			attachment.blockEntity.save();
+		protected void onContentsChanged(int index, ItemStack previousContents) {
+			syncToAttachment();
+			entity.save();
 		}
 
 		@Override
-		public boolean isItemValid(int slot, ItemStack stack) {
-			return (attachment.inputFilter == null || attachment.inputFilter.test(stack)) && super.isItemValid(slot, stack);
+		public boolean isValid(int index, ItemResource resource) {
+			if (inputFilter == null) {
+				return true;
+			}
+
+			return inputFilter.test(resource.toStack(1));
+		}
+
+		@Override
+		public boolean kjs$isMutable() {
+			return true;
+		}
+
+		@Override
+		public int kjs$getSlots() {
+			return size();
+		}
+
+		@Override
+		public ItemStack kjs$getStackInSlot(int slot) {
+			return stacks.get(slot);
+		}
+
+		@Override
+		public void kjs$setStackInSlot(int slot, ItemStack stack) {
+			var prev = stacks.get(slot);
+			stacks.set(slot, stack);
+			onContentsChanged(slot, prev);
+		}
+
+		@Override
+		public ItemStack kjs$insertItem(int slot, ItemStack stack, boolean simulate) {
+			if (stack.isEmpty()) {
+				return stack;
+			}
+
+			var existing = stacks.get(slot);
+			int limit = Math.min(stack.getMaxStackSize(), kjs$getSlotLimit(slot));
+
+			if (!existing.isEmpty()) {
+				if (!ItemStack.isSameItemSameComponents(existing, stack)) {
+					return stack;
+				}
+
+				limit -= existing.getCount();
+			}
+
+			if (limit <= 0) {
+				return stack;
+			}
+
+			int toInsert = Math.min(stack.getCount(), limit);
+
+			if (!simulate) {
+				var prev = existing.copy();
+
+				if (existing.isEmpty()) {
+					stacks.set(slot, stack.copyWithCount(toInsert));
+				} else {
+					existing.grow(toInsert);
+				}
+
+				onContentsChanged(slot, prev);
+			}
+
+			return stack.getCount() == toInsert ? ItemStack.EMPTY : stack.copyWithCount(stack.getCount() - toInsert);
+		}
+
+		@Override
+		public ItemStack kjs$extractItem(int slot, int amount, boolean simulate) {
+			if (amount <= 0) {
+				return ItemStack.EMPTY;
+			}
+
+			var existing = stacks.get(slot);
+
+			if (existing.isEmpty()) {
+				return ItemStack.EMPTY;
+			}
+
+			int toExtract = Math.min(amount, existing.getCount());
+
+			if (simulate) {
+				return existing.copyWithCount(toExtract);
+			}
+
+			var prev = existing.copy();
+			var result = existing.split(toExtract);
+
+			if (existing.isEmpty()) {
+				stacks.set(slot, ItemStack.EMPTY);
+			}
+
+			onContentsChanged(slot, prev);
+			return result;
+		}
+
+		@Override
+		public int kjs$getSlotLimit(int slot) {
+			return getCapacityAsInt(slot, ItemResource.EMPTY);
+		}
+
+		@Override
+		public boolean kjs$isItemValid(int slot, ItemStack stack) {
+			if (stack.isEmpty()) {
+				return false;
+			}
+			return isValid(slot, ItemResource.of(stack));
 		}
 
 		@Override
 		public int kjs$getWidth() {
-			return attachment.width;
+			return width;
 		}
 
 		@Override
 		public int kjs$getHeight() {
-			return attachment.height;
-		}
-	}
-
-	public final int width, height;
-	public final KubeBlockEntity blockEntity;
-	public final ItemPredicate inputFilter;
-	public final Wrapped inventory;
-
-	public InventoryAttachment(KubeBlockEntity blockEntity, int width, int height, @Nullable ItemPredicate inputFilter) {
-		this.width = width;
-		this.height = height;
-		this.blockEntity = blockEntity;
-		this.inputFilter = inputFilter;
-		this.inventory = createInventory();
-	}
-
-	protected Wrapped createInventory() {
-		return new Wrapped(this);
-	}
-
-	@Override
-	public Object getWrappedObject() {
-		return inventory;
-	}
-
-	@Override
-	@Nullable
-	public <CAP, SRC> CAP getCapability(BlockCapability<CAP, SRC> capability) {
-		if (capability == Capabilities.ItemHandler.BLOCK) {
-			return (CAP) inventory;
+			return height;
 		}
 
-		return null;
-	}
-
-	@Override
-	public ListTag serialize(HolderLookup.Provider registries) {
-		var list = new ListTag();
-
-		for (int i = 0; i < width * height; i++) {
-			var stack = inventory.stacks().get(i);
-
-			if (!stack.isEmpty()) {
-				var itemTag = (CompoundTag) stack.save(registries, new CompoundTag());
-				itemTag.putByte("slot", (byte) i);
-				list.add(itemTag);
-			}
+		@Override
+		@Nullable
+		public LevelBlock kjs$getBlock(Level level) {
+			return level.kjs$getBlock(entity);
 		}
 
-		return list;
-	}
-
-	@Override
-	public void deserialize(HolderLookup.Provider registries, Tag tag) {
-		inventory.setSize(width * height);
-
-		if (tag instanceof ListTag list) {
-			for (int i = 0; i < list.size(); i++) {
-				var itemTag = list.getCompound(i);
-				var slot = itemTag.getByte("slot");
-
-				if (slot >= 0 && slot < width * height) {
-					inventory.stacks().set(slot, ItemStack.parse(registries, itemTag).orElse(ItemStack.EMPTY));
+		public void syncFromAttachment() {
+			var map = entity.getData(KubeJSAttachmentTypes.INVENTORY.get());
+			var loadedStacks = map.get(id);
+			if (loadedStacks != null) {
+				for (int i = 0; i < stacks.size(); i++) {
+					stacks.set(i, i < loadedStacks.size() ? loadedStacks.get(i) : ItemStack.EMPTY);
 				}
 			}
+			map.put(id, stacks);
 		}
-	}
 
-	@Override
-	public void onRemove(ServerLevel level, KubeBlockEntity blockEntity, BlockState newState) {
-		Containers.dropContents(blockEntity.getLevel(), blockEntity.getBlockPos(), inventory.stacks());
+		public void syncToAttachment() {
+			var map = entity.getData(KubeJSAttachmentTypes.INVENTORY.get());
+			map.put(id, stacks);
+		}
 	}
 }

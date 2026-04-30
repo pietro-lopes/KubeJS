@@ -10,21 +10,23 @@ import dev.latvian.mods.kubejs.block.callback.BlockStateModifyCallback;
 import dev.latvian.mods.kubejs.block.callback.BlockStateModifyPlacementCallback;
 import dev.latvian.mods.kubejs.block.callback.BlockStateRotateCallback;
 import dev.latvian.mods.kubejs.block.callback.CanBeReplacedCallback;
-import dev.latvian.mods.kubejs.block.callback.EntityFallenOnBlockCallback;
 import dev.latvian.mods.kubejs.block.callback.EntityBlockCallback;
+import dev.latvian.mods.kubejs.block.callback.EntityFallenOnBlockCallback;
 import dev.latvian.mods.kubejs.block.callback.RandomTickCallback;
+import dev.latvian.mods.kubejs.block.entity.InventoryAttachment;
 import dev.latvian.mods.kubejs.block.entity.KubeBlockEntity;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.script.ScriptTypeHolder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -33,6 +35,8 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.ScheduledTickAccess;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.Mirror;
@@ -51,7 +55,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.Optional;
@@ -59,7 +63,7 @@ import java.util.function.Consumer;
 
 public class BasicKubeBlock extends Block implements SimpleWaterloggedBlock {
 	public static class Builder extends BlockBuilder {
-		public Builder(ResourceLocation i) {
+		public Builder(Identifier i) {
 			super(i);
 		}
 
@@ -69,6 +73,7 @@ public class BasicKubeBlock extends Block implements SimpleWaterloggedBlock {
 		}
 	}
 
+	@SuppressWarnings("DataFlowIssue") // safe
 	public static class WithEntity extends BasicKubeBlock implements EntityBlock {
 		public WithEntity(BlockBuilder p) {
 			super(p);
@@ -161,17 +166,16 @@ public class BasicKubeBlock extends Block implements SimpleWaterloggedBlock {
 	}
 
 	@Override
-	@Deprecated
-	public BlockState updateShape(BlockState state, Direction facing, BlockState facingState, LevelAccessor world, BlockPos pos, BlockPos facingPos) {
+	protected BlockState updateShape(BlockState state, LevelReader level, ScheduledTickAccess ticks, BlockPos pos, Direction directionToNeighbour, BlockPos neighbourPos, BlockState neighbourState, RandomSource random) {
 		if (state.getOptionalValue(BlockStateProperties.WATERLOGGED).orElse(false)) {
-			world.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(world));
+			ticks.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(level));
 		}
 
 		return state;
 	}
 
 	@Override
-	public boolean propagatesSkylightDown(BlockState state, BlockGetter level, BlockPos pos) {
+	protected boolean propagatesSkylightDown(BlockState state) {
 		return blockBuilder.transparent || !(state.getOptionalValue(BlockStateProperties.WATERLOGGED).orElse(false));
 	}
 
@@ -219,9 +223,9 @@ public class BasicKubeBlock extends Block implements SimpleWaterloggedBlock {
 	}
 
 	@Override
-	public boolean canPlaceLiquid(Player player, BlockGetter blockGetter, BlockPos blockPos, BlockState blockState, Fluid fluid) {
+	public boolean canPlaceLiquid(@Nullable LivingEntity user, BlockGetter level, BlockPos pos, BlockState state, Fluid type) {
 		if (blockBuilder.canBeWaterlogged()) {
-			return SimpleWaterloggedBlock.super.canPlaceLiquid(player, blockGetter, blockPos, blockState, fluid);
+			return SimpleWaterloggedBlock.super.canPlaceLiquid(user, level, pos, state, type);
 		}
 
 		return false;
@@ -237,9 +241,9 @@ public class BasicKubeBlock extends Block implements SimpleWaterloggedBlock {
 	}
 
 	@Override
-	public ItemStack pickupBlock(Player player, LevelAccessor levelAccessor, BlockPos blockPos, BlockState blockState) {
+	public ItemStack pickupBlock(@Nullable LivingEntity user, LevelAccessor level, BlockPos pos, BlockState state) {
 		if (blockBuilder.canBeWaterlogged()) {
-			return SimpleWaterloggedBlock.super.pickupBlock(player, levelAccessor, blockPos, blockState);
+			return SimpleWaterloggedBlock.super.pickupBlock(user, level, pos, state);
 		}
 
 		return ItemStack.EMPTY;
@@ -255,14 +259,15 @@ public class BasicKubeBlock extends Block implements SimpleWaterloggedBlock {
 	}
 
 	@Override
-	protected void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+	protected void entityInside(BlockState state, Level level, BlockPos pos, Entity entity, InsideBlockEffectApplier effectApplier, boolean isPrecise) {
 		if (blockBuilder.insideCallback != null) {
 			var callbackJS = new EntityBlockCallback(level, entity, pos, state);
 			safeCallback(level, blockBuilder.insideCallback, callbackJS, "Error while an entity was inside a custom block ");
 		} else {
-			super.entityInside(state, level, pos, entity);
+			super.entityInside(state, level, pos, entity, effectApplier, isPrecise);
 		}
 	}
+
 
 	@Override
 	public void stepOn(Level level, BlockPos blockPos, BlockState blockState, Entity entity) {
@@ -275,36 +280,36 @@ public class BasicKubeBlock extends Block implements SimpleWaterloggedBlock {
 	}
 
 	@Override
-	public void fallOn(Level level, BlockState blockState, BlockPos blockPos, Entity entity, float f) {
+	public void fallOn(Level level, BlockState state, BlockPos pos, Entity entity, double fallDistance) {
 		if (blockBuilder.fallOnCallback != null) {
-			var callbackJS = new EntityFallenOnBlockCallback(level, entity, blockPos, blockState, f);
+			var callbackJS = new EntityFallenOnBlockCallback(level, entity, pos, state, fallDistance);
 			safeCallback(level, blockBuilder.fallOnCallback, callbackJS, "Error while an entity fell on custom block ");
 		} else {
-			super.fallOn(level, blockState, blockPos, entity, f);
+			super.fallOn(level, state, pos, entity, fallDistance);
 		}
 	}
 
 	@Override
-	public void updateEntityAfterFallOn(BlockGetter blockGetter, Entity entity) {
+	public void updateEntityMovementAfterFallOn(BlockGetter level, Entity entity) {
 		if (blockBuilder.afterFallenOnCallback != null) {
-			var callbackJS = new AfterEntityFallenOnBlockCallback(blockGetter, entity);
+			var callbackJS = new AfterEntityFallenOnBlockCallback(level, entity);
 			safeCallback(entity, blockBuilder.afterFallenOnCallback, callbackJS, "Error while bouncing entity from custom block ");
 			// if they did not change the entity's velocity, then use the default method to reset the velocity.
 			if (!callbackJS.hasChangedVelocity()) {
-				super.updateEntityAfterFallOn(blockGetter, entity);
+				super.updateEntityMovementAfterFallOn(level, entity);
 			}
 		} else {
-			super.updateEntityAfterFallOn(blockGetter, entity);
+			super.updateEntityMovementAfterFallOn(level, entity);
 		}
 	}
 
 	@Override
-	public void wasExploded(Level level, BlockPos blockPos, Explosion explosion) {
+	public void wasExploded(ServerLevel level, BlockPos pos, Explosion explosion) {
 		if (blockBuilder.explodedCallback != null) {
-			var callbackJS = new BlockExplodedCallback(level, blockPos, explosion);
+			var callbackJS = new BlockExplodedCallback(level, pos, explosion);
 			safeCallback(level, blockBuilder.explodedCallback, callbackJS, "Error while exploding custom block ");
 		} else {
-			super.wasExploded(level, blockPos, explosion);
+			super.wasExploded(level, pos, explosion);
 		}
 	}
 
@@ -333,34 +338,26 @@ public class BasicKubeBlock extends Block implements SimpleWaterloggedBlock {
 	}
 
 	@Override
-	public ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
+	public InteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
 		if (blockBuilder.rightClick != null) {
 			if (!level.isClientSide()) {
 				blockBuilder.rightClick.accept(new BlockRightClickedKubeEvent(stack, player, hand, pos, hit.getDirection(), hit));
 			}
 
-			return ItemInteractionResult.SUCCESS;
+			return InteractionResult.SUCCESS;
 		}
 
-		return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+		return InteractionResult.PASS;
 	}
 
 	@Override
-	public void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean bl) {
-		if (!state.is(newState.getBlock())) {
-			if (level.getBlockEntity(pos) instanceof KubeBlockEntity entity) {
-				if (level instanceof ServerLevel s) {
-					for (var entry : entity.attachmentArray) {
-						entry.attachment().onRemove(s, entity, newState);
-					}
-				}
-
-				level.updateNeighbourForOutputSignal(pos, this);
-			}
-
-			super.onRemove(state, level, pos, newState, bl);
+	protected void affectNeighborsAfterRemoval(BlockState state, ServerLevel level, BlockPos pos, boolean movedByPiston) {
+		if (level.getBlockEntity(pos) instanceof KubeBlockEntity entity) {
+			InventoryAttachment.onRemove(level, entity);
+			level.updateNeighbourForOutputSignal(pos, this.asBlock());
 		}
 	}
+
 
 	@Override
 	public void setPlacedBy(Level level, BlockPos blockPos, BlockState blockState, @Nullable LivingEntity livingEntity, ItemStack itemStack) {

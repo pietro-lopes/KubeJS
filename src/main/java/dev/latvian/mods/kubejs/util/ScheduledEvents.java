@@ -1,6 +1,6 @@
 package dev.latvian.mods.kubejs.util;
 
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.rhino.BaseFunction;
 import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.RhinoException;
@@ -9,6 +9,7 @@ import dev.latvian.mods.rhino.Scriptable;
 import dev.latvian.mods.rhino.ScriptableObject;
 import dev.latvian.mods.rhino.Undefined;
 import dev.latvian.mods.rhino.type.TypeInfo;
+import org.jspecify.annotations.NullUnmarked;
 
 import java.time.Duration;
 import java.time.temporal.TemporalAmount;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+@NullUnmarked
 public class ScheduledEvents {
 	public static class ScheduledEvent {
 		private static final Predicate<ScheduledEvent> TICK = ScheduledEvent::tick;
@@ -50,7 +52,7 @@ public class ScheduledEvents {
 				try {
 					callback.onCallback(this);
 				} catch (RhinoException ex) {
-					ConsoleJS.SERVER.error("Error occurred while handling scheduled event callback: " + ex.getMessage());
+					ScriptType.SERVER.console.error("Error occurred while handling scheduled event callback: " + ex.getMessage());
 				} catch (Throwable ex) {
 					ex.printStackTrace();
 				}

@@ -3,8 +3,9 @@ package dev.latvian.mods.kubejs.core.mixin;
 import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.util.RemapPrefixForJS;
 import dev.latvian.mods.rhino.util.SpecialEquality;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -20,29 +21,30 @@ import static dev.latvian.mods.kubejs.registry.RegistryType.Scanner;
 public abstract class ResourceKeyMixin implements SpecialEquality {
 	@Shadow
 	@Final
-	private ResourceLocation location;
+	private Identifier identifier;
 
 	@Unique
 	public String kjs$getNamespace() {
-		return location.getNamespace();
+		return identifier.getNamespace();
 	}
 
 	@Unique
 	public String kjs$getPath() {
-		return location.getPath();
+		return identifier.getPath();
 	}
 
 	@Inject(method = "<init>", at = @At(value = "RETURN"))
-	private void kjs$getKeyStackTraces(ResourceLocation registryName, ResourceLocation location, CallbackInfo ci) {
+	private void kjs$getKeyStackTraces(Identifier registryName, Identifier location, CallbackInfo ci) {
 		Scanner.scan(registryName, location);
 	}
 
 	@Override
-	public boolean specialEquals(Context cx, Object o, boolean shallow) {
+	public boolean specialEquals(Context cx, @Nullable Object o, boolean shallow) {
 		return switch (o) {
+			case null -> false;
 			case ResourceKey<?> _key -> o == this;
-			case ResourceLocation id -> location.equals(id);
-			default -> location.toString().equals(o.toString());
+			case Identifier id -> identifier.equals(id);
+			default -> identifier.toString().equals(o.toString());
 		};
 	}
 }

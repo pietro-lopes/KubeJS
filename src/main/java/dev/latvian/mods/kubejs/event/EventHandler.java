@@ -11,15 +11,14 @@ import dev.latvian.mods.rhino.Scriptable;
 import dev.latvian.mods.rhino.Wrapper;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import dev.latvian.mods.rhino.util.HideFromJS;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/**
- * <h3>Example</h3>
- * <p><code>public static final EventHandler CLIENT_RIGHT_CLICKED = ItemEvents.GROUP.client("clientRightClicked", () -> ItemClickedEventJS.class).extra(ItemEvents.SUPPORTS_ITEM);</code></p>
- */
+/// ### Example
+///
+/// `public static final EventHandler CLIENT\_RIGHT\_CLICKED = ItemEvents.GROUP.client("clientRightClicked", () -> ItemClickedEventJS.class).extra(ItemEvents.SUPPORTS\_ITEM);`
 public class EventHandler extends BaseFunction {
 	private static final TypeInfo EVENT_HANDLER_TYPE_INFO = TypeInfo.of(IEventHandler.class);
 
@@ -27,11 +26,11 @@ public class EventHandler extends BaseFunction {
 	public final String name;
 	public final ScriptTypePredicate scriptTypePredicate;
 	public final Supplier<Class<? extends KubeEvent>> eventType;
-	protected TypeInfo result;
-	public transient EventTargetType<?> target;
+	protected @Nullable TypeInfo result;
+	public transient @Nullable EventTargetType<?> target;
 	public transient boolean targetRequired;
-	protected EventHandlerContainer[] eventContainers;
-	public transient EventExceptionHandler exceptionHandler;
+	protected @Nullable EventHandlerContainer @Nullable [] eventContainers;
+	public transient @Nullable EventExceptionHandler exceptionHandler;
 
 	EventHandler(EventGroup g, String n, ScriptTypePredicate st, Supplier<Class<? extends KubeEvent>> e) {
 		this.group = g;
@@ -45,9 +44,7 @@ public class EventHandler extends BaseFunction {
 		this.exceptionHandler = null;
 	}
 
-	/**
-	 * Allow event.cancel() to be called
-	 */
+	/// Allow event.cancel() to be called
 	@HideFromJS
 	public EventHandler hasResult(TypeInfo result) {
 		this.result = result;
@@ -79,16 +76,12 @@ public class EventHandler extends BaseFunction {
 		return handler;
 	}
 
-	/**
-	 * Marks this event handler to require a target, usually needed for events related to registries
-	 */
+	/// Marks this event handler to require a target, usually needed for events related to registries
 	public <E> TargetedEventHandler<E> requiredTarget(EventTargetType<E> type) {
 		return requiredTarget(type, true);
 	}
 
-	/**
-	 * Marks this event handler to support a target, usually needed for events related to registries
-	 */
+	/// Marks this event handler to support a target, usually needed for events related to registries
 	public <E> TargetedEventHandler<E> supportsTarget(EventTargetType<E> type) {
 		return requiredTarget(type, false);
 	}
@@ -149,7 +142,7 @@ public class EventHandler extends BaseFunction {
 		}
 	}
 
-	protected EventHandlerContainer[] createMap(@Nullable Object extraId) {
+	protected @Nullable EventHandlerContainer[] createMap(@Nullable Object extraId) {
 		if (eventContainers == null) {
 			eventContainers = new EventHandlerContainer[ScriptType.VALUES.length];
 		}
@@ -162,9 +155,7 @@ public class EventHandler extends BaseFunction {
 		listen(null, type, extraId, handler);
 	}
 
-	/**
-	 * @see EventHandler#post(ScriptTypeHolder, KubeEvent)
-	 */
+	/// @see EventHandler#post(ScriptTypeHolder, KubeEvent)
 	public EventResult post(KubeEvent event) {
 		if (scriptTypePredicate instanceof ScriptTypeHolder type) {
 			return postInternal(type, null, event);
@@ -173,15 +164,13 @@ public class EventHandler extends BaseFunction {
 		}
 	}
 
-	/**
-	 * @return EventResult that can contain an object. What previously returned true on {@link KubeEvent#cancel(Context)} ()} now returns {@link EventResult#interruptFalse()}
-	 * @see KubeEvent#cancel(Context)
-	 * @see KubeEvent#success(Context)
-	 * @see KubeEvent#exit(Context)
-	 * @see KubeEvent#cancel(Context, Object)
-	 * @see KubeEvent#success(Context, Object)
-	 * @see KubeEvent#exit(Context, Object)
-	 */
+	/// @return EventResult that can contain an object. What previously returned true on [KubeEvent#cancel(Context)] ()} now returns [EventResult#interruptFalse()]
+	/// @see KubeEvent#cancel(Context)
+	/// @see KubeEvent#success(Context)
+	/// @see KubeEvent#exit(Context)
+	/// @see KubeEvent#cancel(Context, Object)
+	/// @see KubeEvent#success(Context, Object)
+	/// @see KubeEvent#exit(Context, Object)
 	public EventResult post(ScriptTypeHolder scriptType, KubeEvent event) {
 		return postInternal(scriptType, null, event);
 	}
@@ -254,6 +243,7 @@ public class EventHandler extends BaseFunction {
 	}
 
 	@Override
+	@Nullable
 	public Object call(Context cx, Scriptable scope, Scriptable thisObj, Object[] args) {
 		ScriptType type = ((KubeJSContext) cx).getType();
 

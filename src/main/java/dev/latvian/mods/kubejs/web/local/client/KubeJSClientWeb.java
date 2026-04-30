@@ -1,55 +1,39 @@
 package dev.latvian.mods.kubejs.web.local.client;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
-import com.mojang.blaze3d.platform.NativeImage;
-import com.mojang.serialization.JsonOps;
 import dev.latvian.apps.tinyserver.http.response.HTTPResponse;
 import dev.latvian.apps.tinyserver.http.response.HTTPStatus;
-import dev.latvian.apps.tinyserver.http.response.error.client.BadRequestError;
 import dev.latvian.mods.kubejs.KubeJS;
-import dev.latvian.mods.kubejs.KubeJSPaths;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugin;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugins;
-import dev.latvian.mods.kubejs.plugin.builtin.wrapper.UUIDWrapper;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.util.CachedComponentObject;
-import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.kubejs.util.Lazy;
 import dev.latvian.mods.kubejs.util.NameProvider;
 import dev.latvian.mods.kubejs.web.JsonContent;
 import dev.latvian.mods.kubejs.web.KJSHTTPRequest;
-import dev.latvian.mods.kubejs.web.LocalWebServer;
 import dev.latvian.mods.kubejs.web.LocalWebServerAPIRegistry;
 import dev.latvian.mods.kubejs.web.LocalWebServerRegistry;
 import dev.latvian.mods.kubejs.web.local.KubeJSWeb;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
-import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Blocks;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 
 public class KubeJSClientWeb {
-	private static final Lazy<CreativeModeTab> SEARCH_TAB = Lazy.of(() -> BuiltInRegistries.CREATIVE_MODE_TAB.get(CreativeModeTabs.SEARCH));
+	private static final Lazy<CreativeModeTab> SEARCH_TAB = Lazy.of(() -> BuiltInRegistries.CREATIVE_MODE_TAB.getValueOrThrow(CreativeModeTabs.SEARCH));
 
 	private static final Lazy<Map<Item, NameProvider<ItemStack>>> ITEM_NAME_PROVIDERS = Lazy.identityMap(map -> KubeJSPlugins.forEachPlugin(map::put, KubeJSPlugin::registerItemNameProviders));
 
@@ -89,7 +73,7 @@ public class KubeJSClientWeb {
 	}
 
 	public static void register(LocalWebServerRegistry registry) {
-		registry.get("/api/client/translate/{key}", KubeJSClientWeb::getTranslate);
+		/*registry.get("/api/client/translate/{key}", KubeJSClientWeb::getTranslate);
 		registry.get("/api/client/component-string/{json}", KubeJSClientWeb::getComponentString);
 
 		registry.get("/api/client/search/items", KubeJSClientWeb::getSearchItems);
@@ -99,14 +83,14 @@ public class KubeJSClientWeb {
 		registry.get("/api/client/assets/list/<prefix>", KubeJSClientWeb::getAssetList);
 		registry.get("/api/client/assets/get/{namespace}/<path>", KubeJSClientWeb::getAssetContent);
 
-		registry.get("/img/screenshot", KubeJSClientWeb::getScreenshot);
+		 registry.get("/img/screenshot", KubeJSClientWeb::getScreenshot);
 
 		registry.get("/img/{size}/item/{namespace}/{path}", ImageGenerator::item);
 		registry.get("/img/{size}/block/{namespace}/{path}", ImageGenerator::block);
 		registry.get("/img/{size}/fluid/{namespace}/{path}", ImageGenerator::fluid);
 		registry.get("/img/{size}/item-tag/{namespace}/{path}", ImageGenerator::itemTag);
 		registry.get("/img/{size}/block-tag/{namespace}/{path}", ImageGenerator::blockTag);
-		registry.get("/img/{size}/fluid-tag/{namespace}/{path}", ImageGenerator::fluidTag);
+		registry.get("/img/{size}/fluid-tag/{namespace}/{path}", ImageGenerator::fluidTag);*/
 	}
 
 	public static void registerWithAuth(LocalWebServerRegistry registry) {
@@ -117,7 +101,7 @@ public class KubeJSClientWeb {
 		KubeJS.getClientScriptManager().reload();
 	}
 
-	private static HTTPResponse getScreenshot(KJSHTTPRequest req) {
+	/*private static HTTPResponse getScreenshot(KJSHTTPRequest req) {
 		var bytes = req.supplyInMainThread(() -> {
 			var mc = Minecraft.getInstance();
 			mc.getMainRenderTarget().bindRead();
@@ -135,17 +119,17 @@ public class KubeJSClientWeb {
 		});
 
 		return HTTPResponse.ok().content(bytes, "image/png");
-	}
+	}*/
 
 	private static HTTPResponse getTranslate(KJSHTTPRequest req) {
 		return HTTPResponse.ok().text(I18n.get(req.variable("key").asString()));
 	}
 
 	private static HTTPResponse getComponentString(KJSHTTPRequest req) {
-		return HTTPResponse.ok().text(ComponentSerialization.FLAT_CODEC.decode(req.registries().java(), req.variable("json")).getOrThrow().getFirst().getString());
+		return HTTPResponse.ok().text(ComponentSerialization.CODEC.decode(req.registries().java(), req.variable("json")).getOrThrow().getFirst().getString());
 	}
 
-	private static HTTPResponse getSearchItems(KJSHTTPRequest req) {
+	/*private static HTTPResponse getSearchItems(KJSHTTPRequest req) {
 		var level = Minecraft.getInstance().level;
 		var jsonOps = level == null ? req.registries().json() : level.registryAccess().createSerializationContext(JsonOps.INSTANCE);
 		var nbtOps = level == null ? req.registries().nbt() : level.registryAccess().createSerializationContext(NbtOps.INSTANCE);
@@ -241,7 +225,7 @@ public class KubeJSClientWeb {
 			json.addProperty("icon_path_root", iconPathRoot);
 			json.add("results", results);
 		}));
-	}
+	}*/
 
 	private static HTTPResponse getSearchBlocks(KJSHTTPRequest req) {
 		var includeTags = req.query("tags").asBoolean(false);

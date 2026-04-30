@@ -8,7 +8,7 @@ import dev.latvian.mods.kubejs.plugin.builtin.wrapper.NativeEventWrapper;
 import dev.latvian.mods.kubejs.util.Lazy;
 import dev.latvian.mods.rhino.util.HideFromJS;
 import net.neoforged.fml.loading.FMLPaths;
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
@@ -16,18 +16,21 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+/// The three isolated script execution scopes in KubeJS.
+///
+///   - [#STARTUP] is loaded once during mod initialization; requires a full game restart to reload.
+///     Used for registering content and doing other sorts of modifications that need to be done before a world load.
+///   - [#SERVER] can be reloaded via `/reload`; used for recipes, loot tables, and server-side events.
+///   - [#CLIENT] can be reloaded via F3+T (resource pack reload); used for tooltips, rendering, and client-side events.
+///
+/// Each type also has its own [ConsoleJS] instance for logging, as well as a [ClassFilter].
 public enum ScriptType implements ScriptTypePredicate, ScriptTypeHolder {
 	STARTUP("startup", "KubeJS Startup", KubeJSPaths.STARTUP_SCRIPTS),
 	SERVER("server", "KubeJS Server", KubeJSPaths.SERVER_SCRIPTS),
 	CLIENT("client", "KubeJS Client", KubeJSPaths.CLIENT_SCRIPTS);
-
-	static {
-		ConsoleJS.STARTUP = STARTUP.console;
-		ConsoleJS.SERVER = SERVER.console;
-		ConsoleJS.CLIENT = CLIENT.console;
-	}
 
 	public static final ScriptType[] VALUES = values();
 
@@ -35,17 +38,17 @@ public enum ScriptType implements ScriptTypePredicate, ScriptTypeHolder {
 	public final ConsoleJS console;
 	public final Path path;
 	public final String nameStrip;
-	public transient Executor executor;
+	public final ExecutorService executor;
 	public final Lazy<ClassFilter> classFilter;
 	public final Map<NativeEventWrapper.Listeners.Key, NativeEventWrapper.Listeners> nativeEventListeners;
-	public KubeJSFileWatcherThread fileWatcherThread;
+	public @Nullable KubeJSFileWatcherThread fileWatcherThread;
 
 	ScriptType(String n, String cname, Path path) {
 		this.name = n;
 		this.console = new ConsoleJS(this, LoggerFactory.getLogger(cname));
 		this.path = path;
 		this.nameStrip = name + "_scripts:";
-		this.executor = Runnable::run;
+		this.executor = Executors.newSingleThreadExecutor(Thread.ofVirtual().name("kubejs-" + n + "-bg-").factory());
 		this.classFilter = Lazy.of(() -> KubeJSPlugins.createClassFilter(this));
 		this.nativeEventListeners = new HashMap<>(0);
 	}
@@ -114,7 +117,6 @@ public enum ScriptType implements ScriptTypePredicate, ScriptTypeHolder {
 		return List.of(this);
 	}
 
-	@NotNull
 	@Override
 	public ScriptTypePredicate negate() {
 		return switch (this) {

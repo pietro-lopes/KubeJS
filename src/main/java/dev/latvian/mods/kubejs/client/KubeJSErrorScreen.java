@@ -9,37 +9,42 @@ import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.util.LogType;
 import dev.latvian.mods.kubejs.util.TimeJS;
 import net.minecraft.ChatFormatting;
-import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.ObjectSelectionList;
-import net.minecraft.client.gui.navigation.CommonInputs;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.util.Util;
+import org.joml.Vector2i;
+import org.jspecify.annotations.Nullable;
 
 import java.awt.Desktop;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 
+@SuppressWarnings("NotNullFieldNotInitialized") // lateinit fields
 public class KubeJSErrorScreen extends Screen {
-	public final Screen lastScreen;
+	public final @Nullable Screen lastScreen;
 	public final ScriptType scriptType;
-	public final Path logFile;
+	public final @Nullable Path logFile;
 	public final List<ConsoleLine> errors;
 	public final List<ConsoleLine> warnings;
 	public final boolean canClose;
 	public List<ConsoleLine> viewing;
 	private ErrorList list;
+	private List<FormattedCharSequence> tooltip;
 
-	public KubeJSErrorScreen(Screen lastScreen, ScriptType scriptType, @Nullable Path logFile, List<ConsoleLine> errors, List<ConsoleLine> warnings, boolean canClose) {
+	public KubeJSErrorScreen(@Nullable Screen lastScreen, ScriptType scriptType, @Nullable Path logFile, List<ConsoleLine> errors, List<ConsoleLine> warnings, boolean canClose) {
 		super(Component.empty());
 		this.lastScreen = lastScreen;
 		this.scriptType = scriptType;
@@ -51,8 +56,12 @@ public class KubeJSErrorScreen extends Screen {
 		this.viewing = errors.isEmpty() && !warnings.isEmpty() ? warnings : errors;
 	}
 
-	public KubeJSErrorScreen(Screen lastScreen, ConsoleJS console, boolean canClose) {
+	public KubeJSErrorScreen(@Nullable Screen lastScreen, ConsoleJS console, boolean canClose) {
 		this(lastScreen, console.scriptType, console.scriptType.getLogFile(), new ArrayList<>(console.errors), new ArrayList<>(console.warnings), canClose);
+	}
+
+	public void setTooltip(List<FormattedCharSequence> tooltip) {
+		this.tooltip = tooltip;
 	}
 
 	@Override
@@ -97,12 +106,18 @@ public class KubeJSErrorScreen extends Screen {
 	}
 
 	private void report(Button button) {
-		handleComponentClicked(Style.EMPTY.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, CommonProperties.get().startupErrorReportUrl)));
+		try {
+			Util.getPlatform().openUri(URI.create(CommonProperties.get().startupErrorReportUrl));
+		} catch (Exception ignored) {
+		}
 	}
 
 	private void openLog(Button button) {
 		if (logFile != null) {
-			handleComponentClicked(Style.EMPTY.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE, logFile.toAbsolutePath().toString())));
+			try {
+				Util.getPlatform().openFile(logFile.toAbsolutePath().toFile());
+			} catch (Exception ignored) {
+			}
 		}
 	}
 
@@ -112,16 +127,50 @@ public class KubeJSErrorScreen extends Screen {
 	}
 
 	@Override
-	public void render(GuiGraphics guiGraphics, int mx, int my, float delta) {
-		// this.renderBackground(guiGraphics, mx, my, delta);
-		super.render(guiGraphics, mx, my, delta);
-		this.list.render(guiGraphics, mx, my, delta);
-		guiGraphics.drawCenteredString(this.font, "KubeJS " + scriptType.name + " script " + (viewing == errors ? "errors" : "warnings"), this.width / 2, 12, 0xFFFFFF);
+	public void extractRenderState(GuiGraphicsExtractor graphics, int mx, int my, float delta) {
+		tooltip = null;
+
+		super.extractRenderState(graphics, mx, my, delta);
+		graphics.centeredText(font, "KubeJS " + scriptType.name + " script " + (viewing == errors ? "errors" : "warnings"), width / 2, 12, 0xFFFFFFFF);
+		list.extractRenderState(graphics, mx, my, delta);
+
 
 		if (errors.isEmpty() && warnings.isEmpty()) {
-			guiGraphics.drawCenteredString(this.font, "No errors or warnings found!", this.width / 2, height / 2 - 6, 0x66FF66);
+			graphics.centeredText(font, "No errors or warnings found!", width / 2, height / 2 - 6, 0xFF66FF66);
 		}
+
+		if (tooltip != null && !tooltip.isEmpty()) {
+			var comps = tooltip.stream()
+				.map(ClientTooltipComponent::create)
+				.toList();
+
+			graphics.tooltip(font, comps, mx, my, (guiW, guiH, x, y, tipW, tipH) -> {
+				int px = x + 12;
+				int py = y - 12;
+
+				if (px + tipW > guiW) {
+					px = x - 12 - tipW;
+				}
+				if (py + tipH + 6 > guiH) {
+					py = guiH - tipH - 6;
+				}
+				if (py < 4) {
+					py = 4;
+				}
+				if (px < 4) {
+					px = 4;
+				}
+				if (px + tipW > guiW - 4) {
+					px = guiW - tipW - 4;
+				}
+
+				return new Vector2i(px, py);
+			}, null);
+
+		}
+
 	}
+
 
 	@Override
 	public boolean shouldCloseOnEsc() {
@@ -142,8 +191,6 @@ public class KubeJSErrorScreen extends Screen {
 			this.screen = screen;
 			this.lines = lines;
 
-			// FIXME setRenderBackground(false);
-
 			var calendar = Calendar.getInstance();
 
 			for (int i = 0; i < lines.size(); i++) {
@@ -152,16 +199,17 @@ public class KubeJSErrorScreen extends Screen {
 		}
 
 		@Override
-		public boolean keyPressed(int i, int j, int k) {
-			if (CommonInputs.selected(i)) {
-				var sel = this.getSelected();
+		public boolean keyPressed(KeyEvent event) {
+			int key = event.key();
+			if (key == 257 || key == 32 || key == 335) {
+				var sel = getSelected();
 				if (sel != null) {
 					sel.open();
 					return true;
 				}
 			}
 
-			return super.keyPressed(i, j, k);
+			return super.keyPressed(event);
 		}
 
 		@Override
@@ -265,27 +313,32 @@ public class KubeJSErrorScreen extends Screen {
 			return Component.empty();
 		}
 
-		@Override
-		public void render(GuiGraphics g, int idx, int y, int x, int w, int h, int mx, int my, boolean hovered, float delta) {
-			var col = line.type == LogType.ERROR ? 0xFF5B63 : 0xFFBB5B;
 
-			g.drawString(minecraft.font, indexText, x + 1, y + 1, col);
-			g.drawCenteredString(minecraft.font, scriptLineText, x + w / 2, y + 1, 0xFFFFFF);
-			g.drawString(minecraft.font, timestampText, x + w - minecraft.font.width(timestampText) - 4, y + 1, 0x666666);
+		@Override
+		public void extractContent(GuiGraphicsExtractor g, int mouseX, int mouseY, boolean hovered, float delta) {
+			int x = getX();
+			int y = getY();
+			int w = getWidth();
+			int h = getHeight();
+
+			int col = line.type == LogType.ERROR ? 0xFFFF5B63 : 0xFFFFBB5B;
+			g.text(minecraft.font, indexText, x + 1, y + 1, col);
+			g.centeredText(minecraft.font, scriptLineText, x + w / 2, y + 1, 0xFFFFFFFF);
+			g.text(minecraft.font, timestampText, x + w - minecraft.font.width(timestampText) - 4, y + 1, 0xFF666666);
 
 			for (int i = 0; i < errorText.size(); i++) {
-				g.drawString(minecraft.font, errorText.get(i), x + 1, y + 13 + i * 10, col);
+				g.text(minecraft.font, errorText.get(i), x + 1, y + 13 + i * 10, col);
 			}
 
 			if (hovered && totalStackTraceSize > 0) {
-				if (my < y + 10 && line.sourceLines.size() >= 3) {
+				if (mouseY < y + 10 && line.sourceLines.size() >= 3) {
 					var lines = new ArrayList<FormattedCharSequence>();
 
 					int ln = 0;
 
-					for (var line : line.sourceLines) {
-						if (line.line() > 0 && line.source().endsWith(".js")) {
-							ln = line.line();
+					for (var sl : line.sourceLines) {
+						if (sl.line() > 0 && sl.source().endsWith(".js")) {
+							ln = sl.line();
 							break;
 						}
 					}
@@ -300,45 +353,45 @@ public class KubeJSErrorScreen extends Screen {
 							comp.append(BATIcons.SMALL_SPACE);
 							comp.append(Component.literal("VSCode").withColor(0x22A7F2));
 						}
+
 						lines.addAll(minecraft.font.split(comp, 1000));
 					}
 
-					for (var line : line.sourceLines) {
-						lines.add(Component.empty().append(Component.literal(line.source()).kjs$gray()).append("#" + line.line()).getVisualOrderText());
+					for (var sl : line.sourceLines) {
+						lines.add(Component.empty().append(Component.literal(sl.source()).kjs$gray()).append("#" + sl.line()).getVisualOrderText());
 					}
 
-					errorList.screen.setTooltipForNextRenderPass(lines);
+					errorList.screen.setTooltip(lines);
 				} else {
 					var list = new ArrayList<>(firstStackTraceLine);
 
-					if (Screen.hasShiftDown()) {
+					if (Minecraft.getInstance().hasShiftDown()) {
 						list.addAll(fullStackTraceText);
 					} else {
 						list.addAll(stackTraceText);
 					}
 
-					errorList.screen.setTooltipForNextRenderPass(list);
+					errorList.screen.setTooltip(list);
+
 				}
 			}
 		}
 
 		@Override
-		public boolean mouseClicked(double d, double e, int i) {
+		public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
 			errorList.setSelected(this);
 
-			if (Util.getMillis() - this.lastClickTime < 250L) {
-				if (i == 1) {
-					minecraft.keyboardHandler.setClipboard(String.join("\n", line.stackTrace));
-				} else {
-					open();
-				}
-				return true;
-			} else {
-				this.lastClickTime = Util.getMillis();
+			if (doubleClick) {
+				open();
 				return true;
 			}
+
+			var mc = Minecraft.getInstance();
+			mc.keyboardHandler.setClipboard(String.join("\n", line.stackTrace));
+			return true;
 		}
 
+		@Nullable
 		private String fixSource(@Nullable String source) {
 			if (source != null && !source.isEmpty()) {
 				int c = source.indexOf(':');

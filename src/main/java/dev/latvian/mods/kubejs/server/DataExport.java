@@ -3,21 +3,21 @@ package dev.latvian.mods.kubejs.server;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.KubeJSPaths;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugin;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugins;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
 import dev.latvian.mods.kubejs.script.ConsoleLine;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.util.JsonUtils;
 import dev.latvian.mods.kubejs.util.LogType;
 import dev.latvian.mods.kubejs.util.TimeJS;
 import dev.latvian.mods.rhino.util.HideFromJS;
-import net.minecraft.Util;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
 import net.neoforged.fml.ModList;
+import org.jspecify.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -26,14 +26,17 @@ import java.util.Calendar;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class DataExport {
+	@Nullable
 	@HideFromJS
 	public static DataExport export = null;
 
+	@SuppressWarnings("NotNullFieldNotInitialized") // it's a lateinit field
 	public CommandSourceStack source;
 
 	private final Map<String, Callable<byte[]>> exportedFiles = new ConcurrentHashMap<>();
@@ -95,16 +98,16 @@ public class DataExport {
 			var j = new JsonObject();
 
 			for (var entry : registry.entrySet()) {
-				j.addProperty(entry.getKey().location().toString(), (entry.getValue() == null ? "null" : entry.getValue().getClass().getName()));
+				j.addProperty(entry.getKey().identifier().toString(), (entry.getValue() == null ? "null" : entry.getValue().getClass().getName()));
 			}
 
-			addJson("registries/" + key.location().getPath() + ".json", j);
+			addJson("registries/" + key.identifier().getPath() + ".json", j);
 		});
 
 		var logStringBuilder = new StringBuilder();
 		var calendar = Calendar.getInstance();
 
-		for (var line : ConsoleJS.SERVER.errors) {
+		for (var line : ScriptType.SERVER.console.errors) {
 			appendLine(logStringBuilder, calendar, line);
 		}
 
@@ -115,7 +118,7 @@ public class DataExport {
 
 		logStringBuilder.setLength(0);
 
-		for (var line : ConsoleJS.SERVER.warnings) {
+		for (var line : ScriptType.SERVER.console.warnings) {
 			appendLine(logStringBuilder, calendar, line);
 		}
 
@@ -132,13 +135,16 @@ public class DataExport {
 			o.addProperty("name", mod.getDisplayName().trim());
 			o.addProperty("version", mod.getVersion().toString().trim());
 			o.addProperty("description", mod.getDescription().trim());
-			// FIXME
-			// o.addProperty("authors", String.join(", ", mod.getAuthors()).trim());
-			// o.addProperty("homepage", mod.getHomepage().orElse("").trim());
-			// o.addProperty("sources", mod.getSources().orElse("").trim());
-			// o.addProperty("issue_tracker", mod.getIssueTracker().orElse("").trim());
-			// o.addProperty("license", mod.getLicense() == null ? "" : String.join(", ", mod.getLicense()).trim());
-			o.entrySet().removeIf(e -> e.getValue() instanceof JsonPrimitive p && p.isString() && p.getAsString().isEmpty());
+
+			var cfg = mod.getConfig();
+
+			cfg.getConfigElement("authors").ifPresent(v -> o.addProperty("authors", v.toString().trim()));
+			cfg.getConfigElement("credits").ifPresent(v -> o.addProperty("credits", v.toString().trim()));
+			cfg.getConfigElement("displayURL").ifPresent(v -> o.addProperty("homepage", v.toString().trim()));
+			cfg.getConfigElement("issueTrackerURL").ifPresent(v -> o.addProperty("issue_tracker", v.toString().trim()));
+			cfg.getConfigElement("license").ifPresent(v -> o.addProperty("license", v.toString().trim()));
+
+			o.entrySet().removeIf(e -> e.getValue().getAsString().isBlank());
 			modArr.add(o);
 		}
 
@@ -175,7 +181,7 @@ public class DataExport {
 				if (file.isFile()) {
 					file.delete();
 					KubeJS.LOGGER.info("Deleted old file {}", file.getPath());
-				} else if (file.isDirectory() && file.list().length == 0) {
+				} else if (file.isDirectory() && Objects.requireNonNull(file.list()).length == 0) {
 					file.delete();
 					KubeJS.LOGGER.info("Deleted empty directory {}", file.getPath());
 				}

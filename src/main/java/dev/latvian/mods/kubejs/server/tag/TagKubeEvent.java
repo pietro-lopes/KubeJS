@@ -3,20 +3,18 @@ package dev.latvian.mods.kubejs.server.tag;
 import dev.latvian.mods.kubejs.error.EmptyTagTargetException;
 import dev.latvian.mods.kubejs.event.EventExceptionHandler;
 import dev.latvian.mods.kubejs.event.KubeEvent;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
-import dev.latvian.mods.kubejs.util.Cast;
-import net.minecraft.core.Holder;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagLoader;
+import net.minecraft.tags.TagLoader.EntryWithSource;
 
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+import java.util.function.BiConsumer;
 
 public class TagKubeEvent implements KubeEvent {
 	public static final EventExceptionHandler TAG_EVENT_HANDLER = (event, container, ex) -> {
@@ -25,12 +23,12 @@ public class TagKubeEvent implements KubeEvent {
 			if (stacktrace.length > 0) {
 				if (stacktrace[0].toString().contains("dev.latvian.mods.rhino.ScriptRuntime.doTopCall")) {
 					var error = ex.getCause() == null ? ex : ex.getCause();
-					ConsoleJS.SERVER.error("IllegalStateException was thrown during tag event in script %s:%d, this is most likely due to a concurrency bug in Rhino! While we are working on a fix for this issue, you may manually work around it by reloading the server again (e.g. by using /reload command).".formatted(container.source, container.line), error);
+					ScriptType.SERVER.console.error("IllegalStateException was thrown during tag event in script %s:%d, this is most likely due to a concurrency bug in Rhino! While we are working on a fix for this issue, you may manually work around it by reloading the server again (e.g. by using /reload command).".formatted(container.source, container.line), error);
 					return null;
 				}
 			}
 		} else if (ex instanceof EmptyTagTargetException) {
-			ConsoleJS.SERVER.error(ex.getMessage() + " (at %s:%d)".formatted(container.source, container.line));
+			ScriptType.SERVER.console.error(ex.getMessage() + " (at %s:%d)".formatted(container.source, container.line));
 			return null;
 		}
 		return ex;
@@ -39,78 +37,64 @@ public class TagKubeEvent implements KubeEvent {
 	public static final String SOURCE = "KubeJS Custom Tags";
 
 	public final ResourceKey<?> registryKey;
-	public final Registry<?> vanillaRegistry;
-	public final Map<ResourceLocation, TagWrapper> tags;
-	public int totalAdded;
-	public int totalRemoved;
-	private Set<ResourceLocation> elementIds;
+	public final Map<Identifier, TagWrapper> tags;
+	final Map<Identifier, TagEventBuilder> builders;
+	final Set<Identifier> elementIds;
 
-	public TagKubeEvent(ResourceKey<?> registryKey, Registry<?> vr) {
-		this.registryKey = registryKey;
-		this.vanillaRegistry = vr;
+	private TagKubeEvent(Registry<?> vanillaRegistry, Map<Identifier, List<EntryWithSource>> map) {
+		this.registryKey = vanillaRegistry.key();
 		this.tags = new ConcurrentHashMap<>();
-		this.totalAdded = 0;
-		this.totalRemoved = 0;
+		this.builders = new HashMap<>();
+		this.elementIds = vanillaRegistry.keySet();
+
+		for (var entry : map.entrySet()) {
+			builders.put(entry.getKey(), new TagEventBuilder(entry.getValue()));
+		}
 	}
 
-	public ResourceLocation getType() {
-		return registryKey.location();
+	public static TagKubeEvent fromRegistry(Registry<?> vanillaRegistry, Map<Identifier, List<EntryWithSource>> map) {
+		return new TagKubeEvent(vanillaRegistry, map);
 	}
 
-	public TagWrapper get(ResourceLocation id) {
+	public Identifier getType() {
+		return registryKey.identifier();
+	}
+
+	public TagWrapper get(Identifier id) {
 		return tags.computeIfAbsent(id, this::createTagWrapper);
 	}
 
-	protected TagWrapper createTagWrapper(ResourceLocation id) {
-		return new TagWrapper(this, id, new ArrayList<>());
+	protected TagWrapper createTagWrapper(Identifier id) {
+		return new TagWrapper(this, id);
 	}
 
-	public TagWrapper add(ResourceLocation tag, Object... filters) {
+	TagEventBuilder getOrCreateBuilder(Identifier id) {
+		return builders.computeIfAbsent(id, _ -> new TagEventBuilder(List.of()));
+	}
+
+	public TagWrapper add(Identifier tag, Object... filters) {
 		return get(tag).add(filters);
 	}
 
-	public TagWrapper remove(ResourceLocation tag, Object... filters) {
+	public TagWrapper remove(Identifier tag, Object... filters) {
 		return get(tag).remove(filters);
 	}
 
-	public TagWrapper removeAll(ResourceLocation tag) {
+	public TagWrapper removeAll(Identifier tag) {
 		return get(tag).removeAll();
 	}
 
-	public void removeAllTagsFrom(Object... ids) {
-		var filter = TagEventFilter.unwrap(this, ids);
-
-		for (var tagWrapper : tags.values()) {
-			tagWrapper.entries.removeIf(proxy -> filter.testTagOrElementLocation(proxy.entry().elementOrTag()));
-		}
-	}
-
-	public Set<ResourceLocation> getElementIds() {
-		if (elementIds == null) {
-			elementIds = Cast.to(vanillaRegistry.holders().map(Holder.Reference::key).map(ResourceKey::location).collect(Collectors.toSet()));
-		}
-
+	public Set<Identifier> getElementIds() {
 		return elementIds;
 	}
 
-	void gatherIdsFor(TagWrapper excluded, Collection<ResourceLocation> collection, TagLoader.EntryWithSource entry) {
-		var id = entry.entry().elementOrTag();
+	boolean hasElement(Identifier id) {
+		return elementIds.contains(id);
+	}
 
-		if (id.tag()) {
-			// tag entry, recurse
-			var w = tags.get(id.id());
-			if (w != null && w != excluded) {
-				for (var proxy : w.entries) {
-					gatherIdsFor(excluded, collection, proxy);
-				}
-			}
-		} else {
-			// verify that the entry is actually contained in the registry
-			var entryId = id.id();
-
-			if (getElementIds().contains(entryId)) {
-				collection.add(entryId);
-			}
+	public void build(BiConsumer<Identifier, List<EntryWithSource>> output) {
+		for (var entry : builders.entrySet()) {
+			output.accept(entry.getKey(), entry.getValue().buildEntries());
 		}
 	}
 }

@@ -27,7 +27,7 @@ import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.FriendlyByteBuf;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -49,8 +49,8 @@ public interface NBTWrapper {
 		return switch (t) {
 			case null -> null;
 			case EndTag ignore -> null;
-			case StringTag ignore -> t.getAsString();
-			case NumericTag num -> num.getAsNumber();
+			case StringTag ignore -> t.asString().get();
+			case NumericTag num -> num.asNumber().get();
 			case CompoundTag tag -> {
 				if (tag.isEmpty()) {
 					yield Map.of();
@@ -65,7 +65,7 @@ public interface NBTWrapper {
 
 				yield map;
 			}
-			case CollectionTag<?> tag -> {
+			case CollectionTag tag -> {
 				if (tag.isEmpty()) {
 					yield List.of();
 				}
@@ -78,7 +78,6 @@ public interface NBTWrapper {
 
 				yield list;
 			}
-			default -> t;
 		};
 	}
 
@@ -116,7 +115,7 @@ public interface NBTWrapper {
 				}
 			}
 			case Map<?, ?> map -> {
-				CompoundTag tag = new OrderedCompoundTag();
+				CompoundTag tag = OrderedCompoundTag.create();
 
 				for (Map.Entry<?, ?> entry : map.entrySet()) {
 					Tag nbt1 = wrap(cx, entry.getValue());
@@ -129,7 +128,7 @@ public interface NBTWrapper {
 				yield tag;
 			}
 			case JsonObject json -> {
-				CompoundTag tag = new OrderedCompoundTag();
+				CompoundTag tag = OrderedCompoundTag.create();
 
 				for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
 					Tag nbt1 = wrap(cx, entry.getValue());
@@ -162,21 +161,21 @@ public interface NBTWrapper {
 			case CompoundTag nbt -> nbt;
 			case CharSequence ignored -> {
 				try {
-					yield TagParser.parseTag(v.toString());
+					yield TagParser.parseCompoundFully(v.toString());
 				} catch (Exception ex) {
 					throw Context.throwAsScriptRuntimeEx(ex, cx);
 				}
 			}
 			case JsonPrimitive json -> {
 				try {
-					yield TagParser.parseTag(json.getAsString());
+					yield TagParser.parseCompoundFully(json.getAsString());
 				} catch (Exception ex) {
 					throw Context.throwAsScriptRuntimeEx(ex, cx);
 				}
 			}
 			case JsonObject json -> {
 				try {
-					yield TagParser.parseTag(json.toString());
+					yield TagParser.parseCompoundFully(json.toString());
 				} catch (Exception ex) {
 					throw Context.throwAsScriptRuntimeEx(ex, cx);
 				}
@@ -186,13 +185,13 @@ public interface NBTWrapper {
 	}
 
 	@Nullable
-	static CollectionTag<?> wrapCollection(Context cx, @Nullable Object v) {
+	static CollectionTag wrapCollection(Context cx, @Nullable Object v) {
 		return switch (v) {
 			case null -> null;
-			case CollectionTag<?> tag -> tag;
+			case CollectionTag tag -> tag;
 			case CharSequence ignored -> {
 				try {
-					yield (CollectionTag<?>) TagParser.parseTag("{a:" + v + "}").get("a");
+					yield (CollectionTag) TagParser.parseCompoundFully("{a:" + v + "}").get("a");
 				} catch (Exception ex) {
 					throw Context.throwAsScriptRuntimeEx(ex, cx);
 				}
@@ -215,7 +214,7 @@ public interface NBTWrapper {
 		return (ListTag) wrapCollection(cx, list);
 	}
 
-	private static CollectionTag<?> wrapCollection0(Context cx, Collection<?> c) {
+	private static CollectionTag wrapCollection0(Context cx, Collection<?> c) {
 		if (c.isEmpty()) {
 			return new ListTag();
 		}
@@ -242,7 +241,7 @@ public interface NBTWrapper {
 			int[] array = new int[s];
 
 			for (int i = 0; i < s; i++) {
-				array[i] = ((NumericTag) values[i]).getAsInt();
+				array[i] = values[i].asInt().get();
 			}
 
 			return new IntArrayTag(array);
@@ -250,7 +249,7 @@ public interface NBTWrapper {
 			byte[] array = new byte[s];
 
 			for (int i = 0; i < s; i++) {
-				array[i] = ((NumericTag) values[i]).getAsByte();
+				array[i] = values[i].asByte().get();
 			}
 
 			return new ByteArrayTag(array);
@@ -258,7 +257,7 @@ public interface NBTWrapper {
 			long[] array = new long[s];
 
 			for (int i = 0; i < s; i++) {
-				array[i] = ((NumericTag) values[i]).getAsLong();
+				array[i] = values[i].asLong().get();
 			}
 
 			return new LongArrayTag(array);
@@ -280,11 +279,11 @@ public interface NBTWrapper {
 	}
 
 	static Tag compoundTag() {
-		return new OrderedCompoundTag();
+		return OrderedCompoundTag.create();
 	}
 
 	static Tag compoundTag(Context cx, Map<?, ?> map) {
-		OrderedCompoundTag tag = new OrderedCompoundTag();
+		CompoundTag tag = OrderedCompoundTag.create();
 
 		for (var entry : map.entrySet()) {
 			var tag1 = wrap(cx, entry.getValue());
@@ -392,7 +391,7 @@ public interface NBTWrapper {
 	}
 
 	@Nullable
-	static OrderedCompoundTag read(FriendlyByteBuf buf) {
+	static CompoundTag read(FriendlyByteBuf buf) {
 		return NBTUtils.read(buf);
 	}
 }

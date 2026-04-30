@@ -6,12 +6,11 @@ import dev.latvian.mods.kubejs.level.WrappedSpawner;
 import dev.latvian.mods.kubejs.typings.Info;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 @Info("""
 	Invoked before an entity is spawned into the world.
@@ -23,13 +22,15 @@ public class CheckLivingEntitySpawnKubeEvent implements KubeLivingEntityEvent {
 	private final Level level;
 
 	public final double x, y, z;
-	public final transient MobSpawnType type;
+	public final transient EntitySpawnReason type;
+
+	@Nullable
 	private final Either<BlockEntity, Entity> spawnerEither;
 
 	@Nullable
 	public transient WrappedSpawner spawner;
 
-	public CheckLivingEntitySpawnKubeEvent(LivingEntity entity, Level level, double x, double y, double z, MobSpawnType type, Either<BlockEntity, Entity> spawnerEither) {
+	public CheckLivingEntitySpawnKubeEvent(LivingEntity entity, Level level, double x, double y, double z, EntitySpawnReason type, @Nullable Either<BlockEntity, Entity> spawnerEither) {
 		this.entity = entity;
 		this.level = level;
 		this.x = x;
@@ -57,12 +58,11 @@ public class CheckLivingEntitySpawnKubeEvent implements KubeLivingEntityEvent {
 	}
 
 	@Info("The type of spawn.")
-	public MobSpawnType getType() {
+	public EntitySpawnReason getType() {
 		return type;
 	}
 
 	@Info("The spawner that spawned the entity.")
-	@NotNull
 	public WrappedSpawner getSpawner() {
 		if (spawner == null) {
 			spawner = WrappedSpawner.of(spawnerEither);

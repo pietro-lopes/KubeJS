@@ -6,10 +6,15 @@ import dev.latvian.mods.kubejs.script.SourceLine;
 import dev.latvian.mods.rhino.Context;
 import dev.latvian.mods.rhino.Scriptable;
 import dev.latvian.mods.rhino.Undefined;
+import dev.latvian.mods.rhino.type.RecordTypeInfo;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import dev.latvian.mods.rhino.util.wrap.TypeWrapperFactory;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.Holder;
+import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.level.block.SoundType;
+import net.neoforged.neoforge.common.util.DeferredSoundType;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
@@ -19,7 +24,7 @@ import java.util.Map;
 public class SoundTypeWrapper implements TypeWrapperFactory<SoundType> {
 	public static final SoundTypeWrapper INSTANCE = new SoundTypeWrapper();
 
-	private Map<String, SoundType> map;
+	private @Nullable Map<String, SoundType> map;
 
 	public Map<String, SoundType> getMap() {
 		if (map == null) {
@@ -52,8 +57,7 @@ public class SoundTypeWrapper implements TypeWrapperFactory<SoundType> {
 			case Undefined u -> throw new KubeRuntimeException("Cannot wrap undefined as SoundType!").source(SourceLine.of(cx));
 			case Scriptable s when Undefined.isUndefined(s) -> throw new KubeRuntimeException("Cannot wrap undefined as SoundType!").source(SourceLine.of(cx));
 			case JsonPrimitive j -> wrap(cx, j.getAsString(), target);
-			case ResourceLocation id -> wrap(cx, id.toString(), target);
-			// TODO: maybe a record-style type wrapper? that's kinda all SoundType is anyways
+			case Identifier id -> wrap(cx, id.toString(), target);
 			case CharSequence cs -> {
 				var soundType = getMap().get(cs.toString());
 				if (soundType != null) {
@@ -62,7 +66,22 @@ public class SoundTypeWrapper implements TypeWrapperFactory<SoundType> {
 
 				throw new KubeRuntimeException("Unknown SoundType '%s'".formatted(o)).source(SourceLine.of(cx));
 			}
-			default -> throw new KubeRuntimeException("Don't know how to wrap %s as sound type!".formatted(o)).source(SourceLine.of(cx));
+			default -> ((WrappedSoundType) WrappedSoundType.TYPE_INFO.wrap(cx, o, target)).toSoundType();
 		};
+	}
+
+	private record WrappedSoundType(
+		float volumeIn, float pitchIn,
+		Holder<SoundEvent> breakSound,
+		Holder<SoundEvent> stepSound,
+		Holder<SoundEvent> placeSound,
+		Holder<SoundEvent> hitSound,
+		Holder<SoundEvent> fallSound
+	) {
+		private static final RecordTypeInfo TYPE_INFO = (RecordTypeInfo) TypeInfo.of(WrappedSoundType.class);
+
+		public SoundType toSoundType() {
+			return new DeferredSoundType(volumeIn, pitchIn, breakSound::value, stepSound::value, placeSound::value, hitSound::value, fallSound::value);
+		}
 	}
 }

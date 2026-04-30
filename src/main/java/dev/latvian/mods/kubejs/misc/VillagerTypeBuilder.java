@@ -1,16 +1,17 @@
 package dev.latvian.mods.kubejs.misc;
 
 import dev.latvian.mods.kubejs.registry.BuilderBase;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.npc.VillagerType;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.npc.villager.VillagerType;
 
 public class VillagerTypeBuilder extends BuilderBase<VillagerType> {
-	public VillagerTypeBuilder(ResourceLocation i) {
+	public VillagerTypeBuilder(Identifier i) {
 		super(i);
 	}
 
 	@Override
 	public VillagerType createObject() {
-		return new VillagerType(id.getPath());
+		return new VillagerType();
 	}
+
 }

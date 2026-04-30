@@ -11,17 +11,17 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.MapLike;
 import com.mojang.serialization.RecordBuilder;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.error.RecipeComponentException;
 import dev.latvian.mods.kubejs.recipe.RecipeScriptContext;
-import dev.latvian.mods.kubejs.recipe.RecipeTypeRegistryContext;
 import dev.latvian.mods.kubejs.recipe.filter.RecipeMatchContext;
 import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
+import dev.latvian.mods.kubejs.recipe.schema.RecipeSchemaStorage;
 import dev.latvian.mods.kubejs.util.Cast;
 import dev.latvian.mods.rhino.type.JSObjectTypeInfo;
 import dev.latvian.mods.rhino.type.JSOptionalParam;
 import dev.latvian.mods.rhino.type.TypeInfo;
-import org.jetbrains.annotations.NotNull;
+import net.minecraft.resources.ResourceKey;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,14 +35,12 @@ import java.util.stream.Stream;
 
 public class CustomObjectRecipeComponent implements RecipeComponent<List<CustomObjectRecipeComponent.Value>> {
 	public record Key(String name, RecipeComponent<?> component, boolean optional, boolean alwaysWrite) {
-		public static Codec<Key> createCodec(RecipeTypeRegistryContext ctx) {
-			return RecordCodecBuilder.create(instance -> instance.group(
-				Codec.STRING.fieldOf("name").forGetter(Key::name),
-				ctx.recipeComponentCodec().fieldOf("component").forGetter(Key::component),
-				Codec.BOOL.optionalFieldOf("optional", false).forGetter(Key::optional),
-				Codec.BOOL.optionalFieldOf("always_write", false).forGetter(Key::alwaysWrite)
-			).apply(instance, Key::new));
-		}
+		public static final Codec<Key> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+			Codec.STRING.fieldOf("name").forGetter(Key::name),
+			RecipeSchemaStorage.COMPONENT_CODEC.fieldOf("component").forGetter(Key::component),
+			Codec.BOOL.optionalFieldOf("optional", false).forGetter(Key::optional),
+			Codec.BOOL.optionalFieldOf("always_write", false).forGetter(Key::alwaysWrite)
+		).apply(instance, Key::new));
 
 		public Key(String name, RecipeComponent<?> component, boolean optional) {
 			this(name, component, optional, false);
@@ -75,26 +73,28 @@ public class CustomObjectRecipeComponent implements RecipeComponent<List<CustomO
 		}
 
 		@Override
-		public int compareTo(@NotNull CustomObjectRecipeComponent.Value value) {
+		public int compareTo(CustomObjectRecipeComponent.Value value) {
 			return Integer.compare(index, value.index);
 		}
 	}
 
-	public static final RecipeComponentType<?> TYPE = RecipeComponentType.<CustomObjectRecipeComponent>dynamic(KubeJS.id("custom_object"), (type, ctx) -> RecordCodecBuilder.mapCodec(instance -> instance.group(
-		Key.createCodec(ctx).listOf().fieldOf("keys").forGetter(CustomObjectRecipeComponent::keys)
-	).apply(instance, CustomObjectRecipeComponent::new)));
+	public static final ResourceKey<RecipeComponentType<?>> TYPE = RecipeComponentType.builtin("custom_object");
+
+	public static final MapCodec<CustomObjectRecipeComponent> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+		Key.CODEC.listOf().fieldOf("keys").forGetter(CustomObjectRecipeComponent::keys)
+	).apply(instance, CustomObjectRecipeComponent::new));
 
 	private final List<Key> keys;
-	public Predicate<Set<String>> hasPriority;
-	private Codec<List<Value>> codec;
-	private TypeInfo typeInfo;
+	public @Nullable Predicate<Set<String>> hasPriority;
+	private @Nullable Codec<List<Value>> codec;
+	private @Nullable TypeInfo typeInfo;
 
 	public CustomObjectRecipeComponent(List<Key> keys) {
 		this.keys = List.copyOf(keys);
 	}
 
 	@Override
-	public RecipeComponentType<?> type() {
+	public ResourceKey<RecipeComponentType<?>> type() {
 		return TYPE;
 	}
 
@@ -114,7 +114,7 @@ public class CustomObjectRecipeComponent implements RecipeComponent<List<CustomO
 	}
 
 	@Override
-	public List<CustomObjectRecipeComponent.Value> wrap(RecipeScriptContext rcx, Object from) {
+	public List<CustomObjectRecipeComponent.Value> wrap(RecipeScriptContext rcx, @Nullable Object from) {
 		var cx = rcx.cx();
 
 		// already wrapped
@@ -135,7 +135,6 @@ public class CustomObjectRecipeComponent implements RecipeComponent<List<CustomO
 				var key = switch (entry.getKey()) {
 					case Key id -> id;
 					case CharSequence cs -> keyMap.get(cs.toString());
-					case null -> null;
 					default -> keyMap.get(Objects.toString(entry.getKey()));
 				};
 
@@ -252,7 +251,7 @@ public class CustomObjectRecipeComponent implements RecipeComponent<List<CustomO
 	}
 
 	@Override
-	public boolean hasPriority(RecipeMatchContext cx, Object from) {
+	public boolean hasPriority(RecipeMatchContext cx, @Nullable Object from) {
 		if (from instanceof Map m) {
 			if (hasPriority != null) {
 				return hasPriority.test(m.keySet());

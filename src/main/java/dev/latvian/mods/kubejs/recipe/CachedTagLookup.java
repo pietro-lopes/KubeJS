@@ -6,15 +6,15 @@ import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagEntry;
 import net.minecraft.tags.TagKey;
 import net.minecraft.tags.TagLoader;
 import net.minecraft.util.DependencySorter;
 import net.minecraft.world.item.Items;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -28,28 +28,28 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class CachedTagLookup<T> {
-	public record Entry<T>(ResourceKey<T> key, Registry<T> registry, CachedTagLookup<T> lookup) {
+	public record Entry<T>(ResourceKey<? extends Registry<T>> key, Registry<T> registry, CachedTagLookup<T> lookup) {
 	}
 
-	record SortingEntry(List<TagLoader.EntryWithSource> entries) implements DependencySorter.Entry<ResourceLocation> {
+	record SortingEntry(List<TagLoader.EntryWithSource> entries) implements DependencySorter.Entry<Identifier> {
 		@Override
-		public void visitRequiredDependencies(Consumer<ResourceLocation> visitor) {
+		public void visitRequiredDependencies(Consumer<Identifier> visitor) {
 			this.entries.forEach(arg -> arg.entry().visitRequiredDependencies(visitor));
 		}
 
 		@Override
-		public void visitOptionalDependencies(Consumer<ResourceLocation> visitor) {
+		public void visitOptionalDependencies(Consumer<Identifier> visitor) {
 			this.entries.forEach(arg -> arg.entry().visitOptionalDependencies(visitor));
 		}
 	}
 
 	public final Registry<T> registry;
-	public final Map<ResourceLocation, List<TagLoader.EntryWithSource>> originalMap;
-	private Map<ResourceLocation, Collection<Holder<T>>> tagMap;
-	private Map<TagKey<T>, Set<T>> keyToValue;
-	private Map<T, Set<TagKey<T>>> valueToKey;
+	public final Map<Identifier, List<TagLoader.EntryWithSource>> originalMap;
+	private @Nullable Map<Identifier, Collection<Holder<T>>> tagMap;
+	private @Nullable Map<TagKey<T>, Set<T>> keyToValue;
+	private @Nullable Map<T, Set<TagKey<T>>> valueToKey;
 
-	public CachedTagLookup(Registry<T> registry, Map<ResourceLocation, List<TagLoader.EntryWithSource>> originalMap) {
+	public CachedTagLookup(Registry<T> registry, Map<Identifier, List<TagLoader.EntryWithSource>> originalMap) {
 		this.registry = registry;
 		this.originalMap = originalMap;
 	}
@@ -67,23 +67,24 @@ public class CachedTagLookup<T> {
 		return list.isEmpty() ? Either.right(List.copyOf(builder)) : Either.left(list);
 	}
 
-	public Map<ResourceLocation, Collection<T>> build(Map<ResourceLocation, List<TagLoader.EntryWithSource>> builders) {
-		var map = new HashMap<ResourceLocation, Collection<T>>();
+	public Map<Identifier, Collection<T>> build(Map<Identifier, List<TagLoader.EntryWithSource>> builders) {
+		var map = new HashMap<Identifier, Collection<T>>();
 		var lookup = new TagEntry.Lookup<T>() {
+
+
 			@Override
-			@Nullable
-			public T element(ResourceLocation id) {
+			public @Nullable T element(Identifier id, boolean b) {
 				return registry.getOptional(id).orElse(null);
 			}
 
 			@Override
 			@Nullable
-			public Collection<T> tag(ResourceLocation id) {
+			public Collection<T> tag(Identifier id) {
 				return map.get(id);
 			}
 		};
 
-		var dependencysorter = new DependencySorter<ResourceLocation, SortingEntry>();
+		var dependencysorter = new DependencySorter<Identifier, SortingEntry>();
 		builders.forEach((arg, list) -> dependencysorter.addEntry(arg, new SortingEntry(list)));
 		dependencysorter.orderByDependencies((arg, arg2) -> this.build(lookup, arg2.entries).ifLeft(collection -> KubeJS.LOGGER.error("Couldn't load tag {} as it is missing following references: {}", arg, collection.stream().map(Objects::toString).collect(Collectors.joining("\n\t", "\n\t", "")))).ifRight(collection -> map.put(arg, collection)));
 		return map;
@@ -145,7 +146,7 @@ public class CachedTagLookup<T> {
 		return map;
 	}
 
-	public Map<ResourceLocation, Collection<Holder<T>>> tagMap() {
+	public Map<Identifier, Collection<Holder<T>>> tagMap() {
 		if (tagMap == null) {
 			tagMap = new HashMap<>();
 			var k2v = keyToValue();

@@ -1,20 +1,17 @@
 package dev.latvian.mods.kubejs.client;
 
-import com.mojang.blaze3d.platform.InputConstants;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.serialization.DynamicOps;
 import dev.latvian.mods.kubejs.CommonProperties;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.block.BlockBuilder;
-import dev.latvian.mods.kubejs.client.highlight.HighlightRenderer;
+import dev.latvian.mods.kubejs.block.BlockTintFunction;
+import dev.latvian.mods.kubejs.client.model.KubeJSConditionalCallbackProperty;
 import dev.latvian.mods.kubejs.command.KubeJSClientCommands;
-import dev.latvian.mods.kubejs.fluid.FluidBlockBuilder;
 import dev.latvian.mods.kubejs.fluid.FluidBuilder;
 import dev.latvian.mods.kubejs.fluid.FluidTypeBuilder;
 import dev.latvian.mods.kubejs.gui.KubeJSMenus;
 import dev.latvian.mods.kubejs.gui.KubeJSScreen;
 import dev.latvian.mods.kubejs.item.DynamicItemTooltipsKubeEvent;
-import dev.latvian.mods.kubejs.item.ItemBuilder;
 import dev.latvian.mods.kubejs.item.ItemModelPropertiesKubeEvent;
 import dev.latvian.mods.kubejs.item.ModifyItemTooltipsKubeEvent;
 import dev.latvian.mods.kubejs.plugin.builtin.event.ClientEvents;
@@ -27,27 +24,25 @@ import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.text.action.DynamicTextAction;
 import dev.latvian.mods.kubejs.text.tooltip.ItemTooltipData;
 import dev.latvian.mods.kubejs.text.tooltip.TooltipRequirements;
-import dev.latvian.mods.kubejs.util.ID;
 import dev.latvian.mods.kubejs.util.StackTraceCollector;
 import dev.latvian.mods.kubejs.util.Tristate;
 import dev.latvian.mods.kubejs.web.LocalWebServer;
 import dev.latvian.mods.kubejs.web.WebServerProperties;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.color.block.BlockTintSource;
 import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.recipebook.RecipeUpdateListener;
-import net.minecraft.client.renderer.ItemBlockRenderTypes;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.ShaderInstance;
+import net.minecraft.client.renderer.block.FluidModel;
+import net.minecraft.client.resources.model.sprite.Material;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackType;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.EventPriority;
@@ -56,28 +51,23 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.CustomizeGuiOverlayEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
+import net.neoforged.neoforge.client.event.RegisterConditionalItemModelPropertyEvent;
+import net.neoforged.neoforge.client.event.RegisterFluidModelsEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
-import net.neoforged.neoforge.client.event.RegisterShadersEvent;
-import net.neoforged.neoforge.client.event.RenderGuiEvent;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
-import net.neoforged.neoforge.client.settings.KeyConflictContext;
-import net.neoforged.neoforge.client.settings.KeyModifier;
 import net.neoforged.neoforge.event.AddPackFindersEvent;
 import net.neoforged.neoforge.event.TagsUpdatedEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
-import org.jetbrains.annotations.Nullable;
-import org.lwjgl.glfw.GLFW;
+import org.jspecify.annotations.Nullable;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -100,6 +90,12 @@ public class KubeJSClientEventHandler {
 		}
 	}
 
+	@SubscribeEvent
+	public static void registerConditionalItemModelProperties(RegisterConditionalItemModelPropertyEvent event) {
+		event.register(Identifier.fromNamespaceAndPath("kubejs", "callback"),
+			KubeJSConditionalCallbackProperty.MAP_CODEC);
+	}
+
 	private static void setupClient0() {
 		if (!PlatformWrapper.isGeneratingData() && Minecraft.getInstance() != null && WebServerProperties.get().enabled) {
 			LocalWebServer.start(Minecraft.getInstance(), true);
@@ -107,57 +103,41 @@ public class KubeJSClientEventHandler {
 
 		ItemEvents.MODEL_PROPERTIES.post(ScriptType.STARTUP, new ItemModelPropertiesKubeEvent());
 
-		for (var builder : RegistryObjectStorage.BLOCK) {
-			if (builder instanceof BlockBuilder b) {
-				switch (b instanceof FluidBlockBuilder fb ? fb.fluidBuilder.fluidType.renderType : b.renderType) {
-					// TODO: Move these to model json
-					case CUTOUT -> ItemBlockRenderTypes.setRenderLayer(b.get(), RenderType.cutout());
-					case CUTOUT_MIPPED -> ItemBlockRenderTypes.setRenderLayer(b.get(), RenderType.cutoutMipped());
-					case TRANSLUCENT -> ItemBlockRenderTypes.setRenderLayer(b.get(), RenderType.translucent());
-				}
-			}
-		}
-
-		for (var builder : RegistryObjectStorage.FLUID) {
-			if (builder instanceof FluidBuilder b) {
-				switch (b.fluidType.renderType) {
-					case CUTOUT -> {
-						ItemBlockRenderTypes.setRenderLayer(b.get().getSource(), RenderType.cutout());
-						ItemBlockRenderTypes.setRenderLayer(b.get().getFlowing(), RenderType.cutout());
-					}
-					case CUTOUT_MIPPED -> {
-						ItemBlockRenderTypes.setRenderLayer(b.get().getSource(), RenderType.cutoutMipped());
-						ItemBlockRenderTypes.setRenderLayer(b.get().getFlowing(), RenderType.cutoutMipped());
-					}
-					case TRANSLUCENT -> {
-						ItemBlockRenderTypes.setRenderLayer(b.get().getSource(), RenderType.translucent());
-						ItemBlockRenderTypes.setRenderLayer(b.get().getFlowing(), RenderType.translucent());
-					}
-				}
-			}
-		}
-
 		var list = new ArrayList<ItemTooltipData>();
 		ItemEvents.MODIFY_TOOLTIPS.post(ScriptType.CLIENT, new ModifyItemTooltipsKubeEvent(list::add));
 		KubeJSClient.clientItemTooltips = List.copyOf(list);
 	}
 
 	@SubscribeEvent
-	public static void blockColors(RegisterColorHandlersEvent.Block event) {
+	public static void blockTintSources(RegisterColorHandlersEvent.BlockTintSources event) {
 		for (var builder : RegistryObjectStorage.BLOCK) {
 			if (builder instanceof BlockBuilder b && b.tint != null) {
-				event.register(new BlockTintFunctionWrapper(b.tint), b.get());
+				var tintSources = new ArrayList<@Nullable BlockTintSource>();
+
+				if (b.tint instanceof BlockTintFunction.Mapped mapped) {
+					int maxIndex = 0;
+					for (var entry : mapped.map.int2ObjectEntrySet()) {
+						int key = entry.getIntKey();
+						if (key > maxIndex) {
+							maxIndex = key;
+						}
+					}
+					for (int i = 0; i <= maxIndex; i++) {
+						var func = mapped.map.get(i);
+						tintSources.add(func == null ? null : new BlockTintFunctionWrapper(func, i));
+					}
+				} else {
+					tintSources.add(new BlockTintFunctionWrapper(b.tint, 0));
+				}
+
+				event.register(tintSources, b.get());
 			}
 		}
 	}
 
 	@SubscribeEvent
-	public static void itemColors(RegisterColorHandlersEvent.Item event) {
-		for (var builder : RegistryObjectStorage.ITEM) {
-			if (builder instanceof ItemBuilder b && b.tint != null) {
-				event.register(new ItemTintFunctionWrapper(b.tint), b.get());
-			}
-		}
+	public static void itemTintSources(RegisterColorHandlersEvent.ItemTintSources event) {
+		event.register(Identifier.fromNamespaceAndPath("kubejs", "tint"), ItemTintFunctionWrapper.CODEC);
 	}
 
 	@SubscribeEvent
@@ -174,10 +154,15 @@ public class KubeJSClientEventHandler {
 
 	@SubscribeEvent
 	public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
-		event.register(HighlightRenderer.keyMapping = new KeyMapping("key.kubejs.kubedex", KeyConflictContext.UNIVERSAL, KeyModifier.NONE, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K, "key.categories.kubejs"));
+		var mainCategory = new KeyMapping.Category(Identifier.fromNamespaceAndPath("kubejs", "kubejs"));
+		event.registerCategory(mainCategory);
 
 		var kubeEvent = new KeybindRegistryKubeEvent();
 		KeyBindEvents.REGISTRY.post(kubeEvent);
+
+		for (var catId : kubeEvent.categories()) {
+			event.registerCategory(new KeyMapping.Category(catId));
+		}
 
 		for (var bind : kubeEvent.build()) {
 			event.register(bind.mapping);
@@ -187,39 +172,54 @@ public class KubeJSClientEventHandler {
 	}
 
 	@SubscribeEvent
-	public static void registerCoreShaders(RegisterShadersEvent event) throws IOException {
-		event.registerShader(new ShaderInstance(event.getResourceProvider(), ID.mc("kubejs/rendertype_highlight"), DefaultVertexFormat.POSITION_COLOR), s -> HighlightRenderer.INSTANCE.highlightShader = s);
+	public static void registerCoreShaders(RegisterRenderPipelinesEvent event) {
+		/*var shaderId = Identifier.withDefaultNamespace("kubejs/rendertype_highlight");
+		HighlightRenderer.HIGHLIGHT_PIPELINE_BLOCK = RenderPipeline.builder()
+			.withLocation(shaderId)
+			.withVertexShader(shaderId)
+			.withFragmentShader(shaderId)
+			.withVertexFormat(DefaultVertexFormat.BLOCK, VertexFormat.Mode.QUADS)
+			.withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+			.withCull(true)
+			.withoutBlend()
+			.withColorWrite(true, true)
+			.withDepthWrite(true)
+			.build();
+		event.registerPipeline(HighlightRenderer.HIGHLIGHT_PIPELINE_BLOCK);
+		*/
 	}
 
 	@SubscribeEvent
-	public static void registerClientExtensions(RegisterClientExtensionsEvent event) {
+	public static void onRegisterFluidModels(RegisterFluidModelsEvent event) {
+		for (var builder : RegistryObjectStorage.FLUID) {
+			if (builder instanceof FluidBuilder b) {
+				var type = b.fluidType;
+				event.register(new FluidModel.Unbaked(
+					new Material(type.actualStillTexture),
+					new Material(type.actualFlowingTexture),
+					type.blockOverlayTexture != null ? new Material(type.blockOverlayTexture) : null,
+					type.tint != null ? new FluidTintFunctionWrapper(type.tint, 0, b.bucketColor) : null,
+					null
+				), b.get(), b.flowingFluid.get());
+			}
+		}
+	}
+
+	@SubscribeEvent
+	public static void onRegisterClientExtensions(RegisterClientExtensionsEvent event) {
 		for (var builder : RegistryObjectStorage.FLUID_TYPE) {
 			if (builder instanceof FluidTypeBuilder b) {
 				event.registerFluidType(new IClientFluidTypeExtensions() {
 					@Override
-					public ResourceLocation getStillTexture() {
-						return b.actualStillTexture;
-					}
-
-					@Override
-					public ResourceLocation getFlowingTexture() {
-						return b.actualFlowingTexture;
-					}
-
-					@Override
-					public ResourceLocation getOverlayTexture() {
-						return b.blockOverlayTexture;
-					}
-
-					@Override
 					@Nullable
-					public ResourceLocation getRenderOverlayTexture(Minecraft mc) {
+					public Identifier getRenderOverlayTexture(Minecraft mc) {
 						return b.screenOverlayTexture;
 					}
 				}, b.get());
 			}
 		}
 	}
+
 
 	@SubscribeEvent
 	public static void registerParticleProviders(RegisterParticleProvidersEvent event) {
@@ -234,21 +234,7 @@ public class KubeJSClientEventHandler {
 		// TODO: custom client commands...?
 	}
 
-	@SubscribeEvent
-	public static void debugInfo(CustomizeGuiOverlayEvent.DebugText event) {
-		var mc = Minecraft.getInstance();
-
-		if (mc.player != null) {
-			if (ClientEvents.DEBUG_LEFT.hasListeners()) {
-				ClientEvents.DEBUG_LEFT.post(new DebugInfoKubeEvent(mc.player, event.getLeft()));
-			}
-			if (ClientEvents.DEBUG_RIGHT.hasListeners()) {
-				ClientEvents.DEBUG_RIGHT.post(new DebugInfoKubeEvent(mc.player, event.getRight()));
-			}
-		}
-	}
-
-	private static <T> List<String> appendComponentValue(DynamicOps<Tag> ops, MutableComponent line, DataComponentType<T> type, T value) {
+	private static <T> List<String> appendComponentValue(DynamicOps<Tag> ops, MutableComponent line, DataComponentType<T> type, @Nullable T value) {
 		if (value == null) {
 			line.append(Component.literal("null").kjs$red());
 			return List.of();
@@ -303,13 +289,14 @@ public class KubeJSClientEventHandler {
 	}
 
 	private static void handleItemTooltips(Minecraft mc, ItemTooltipData tooltip, DynamicItemTooltipsKubeEvent event) {
-		if ((tooltip.filter().isEmpty() || tooltip.filter().get().test(event.item)) && (tooltip.requirements().isEmpty() || testRequirements(mc, event, tooltip.requirements().get()))) {
+		if ((tooltip.filter().isEmpty() || tooltip.filter().get().test(event.item))
+			&& (tooltip.requirements().isEmpty() || testRequirements(mc, event, tooltip.requirements().get()))) {
 			for (var action : tooltip.actions()) {
 				if (action instanceof DynamicTextAction(String id)) {
 					try {
 						ItemEvents.DYNAMIC_TOOLTIPS.post(ScriptType.CLIENT, id, event);
 					} catch (Exception ex) {
-						ConsoleJS.CLIENT.error("Item " + event.item.kjs$getId() + " dynamic tooltip error", ex);
+						ScriptType.CLIENT.console.error("Item " + event.item.kjs$getId() + " dynamic tooltip error", ex);
 					}
 				} else {
 					action.apply(event.lines);
@@ -355,73 +342,19 @@ public class KubeJSClientEventHandler {
 	}
 
 	@SubscribeEvent
-	public static void hudPostDraw(RenderGuiEvent.Post event) {
-		var mc = Minecraft.getInstance();
-		HighlightRenderer.INSTANCE.hudPostDraw(mc, event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
-
-		/*
-		if (PlatformWrapper.isDevelopmentEnvironment()) {
-			var fb = ImageGenerator.FB_CACHE.get(128);
-
-			if (fb != null) {
-				var graphics = event.getGuiGraphics();
-				graphics.pose().pushPose();
-				graphics.pose().translate(event.getGuiGraphics().guiWidth() - 66F - 3F, 4F, 0F);
-				graphics.fill(0, 0, 66, 66, 0xFF000000);
-				graphics.fill(1, 1, 65, 65, 0xFF222222);
-				RenderSystem.setShader(GameRenderer::getPositionTexShader);
-				RenderSystem.setShaderTexture(0, fb.getColorTextureId());
-				var m = graphics.pose().last().pose();
-				var builder = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
-				builder.addVertex(m, 1F, 1F, 10F).setUv(0F, 1F);
-				builder.addVertex(m, 1F, 65F, 10F).setUv(0F, 0F);
-				builder.addVertex(m, 65F, 65F, 10F).setUv(1F, 0F);
-				builder.addVertex(m, 65F, 1F, 10F).setUv(1F, 1F);
-				BufferUploader.drawWithShader(builder.buildOrThrow());
-				graphics.pose().popPose();
-			}
-		}
-		*/
-	}
-
-	@SubscribeEvent
-	public static void screenPostDraw(ScreenEvent.Render.Post event) {
-		var mc = Minecraft.getInstance();
-
-		if (event.getScreen() instanceof AbstractContainerScreen<?> screen) {
-			HighlightRenderer.INSTANCE.screen(mc, event.getGuiGraphics(), screen, event.getMouseX(), event.getMouseY(), event.getPartialTick());
-		}
-	}
-
-	@SubscribeEvent
 	public static void clientTick(ClientTickEvent.Pre event) {
 		var mc = Minecraft.getInstance();
-		HighlightRenderer.INSTANCE.tickPre(mc);
+
 		KubeJSKeybinds.triggerKeyEvents(mc);
 	}
 
-	@SubscribeEvent
-	public static void worldRender(RenderLevelStageEvent event) {
-		var mc = Minecraft.getInstance();
-
-		if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY) {
-			HighlightRenderer.INSTANCE.clearBuffers(mc);
-			mc.getMainRenderTarget().bindWrite(true);
-		} else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
-			HighlightRenderer.INSTANCE.renderAfterEntities(mc, event);
-		} else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-			HighlightRenderer.INSTANCE.renderAfterLevel(mc, event);
-		}
-	}
-
-	@Nullable
-	public static Screen setScreen(Screen screen) {
-		if (screen instanceof TitleScreen && !ConsoleJS.STARTUP.errors.isEmpty() && CommonProperties.get().startupErrorGUI) {
-			return new KubeJSErrorScreen(screen, ConsoleJS.STARTUP, false);
+	public static @Nullable Screen setScreen(@Nullable Screen screen) {
+		if (screen instanceof TitleScreen && !ScriptType.STARTUP.console.errors.isEmpty() && CommonProperties.get().startupErrorGUI) {
+			return new KubeJSErrorScreen(screen, ScriptType.STARTUP.console, false);
 		}
 
-		if (screen instanceof TitleScreen && !ConsoleJS.CLIENT.errors.isEmpty() && CommonProperties.get().startupErrorGUI) {
-			return new KubeJSErrorScreen(screen, ConsoleJS.CLIENT, false);
+		if (screen instanceof TitleScreen && !ScriptType.CLIENT.console.errors.isEmpty() && CommonProperties.get().startupErrorGUI) {
+			return new KubeJSErrorScreen(screen, ScriptType.CLIENT.console, false);
 		}
 
 		return screen;
@@ -469,7 +402,7 @@ public class KubeJSClientEventHandler {
 
 		image.setRGB(0, 0, w, h, pixels, 0, w);
 
-		var path = KubeJSPaths.EXPORT.resolve(atlas.location().getNamespace() + "/" + atlas.location().getPath());
+		var path = KubeJSPaths.EXPORT.resolve(atlas.identifier().getNamespace() + "/" + atlas.identifier().getPath());
 
 		if (!Files.exists(path.getParent())) {
 			try {
@@ -496,11 +429,6 @@ public class KubeJSClientEventHandler {
 		}
 	}*/
 
-	// FIXME: implement
-	/*private void textureStitch(TextureStitchEvent.Pre event) {
-		ClientEvents.ATLAS_SPRITE_REGISTRY.post(new AtlasSpriteRegistryEventJS(event::addSprite), event.getAtlas().location());
-	}*/
-
 	@SubscribeEvent(priority = EventPriority.LOW)
 	public static void openScreenEvent(ScreenEvent.Opening event) {
 		var s = KubeJSClientEventHandler.setScreen(event.getScreen());
@@ -512,7 +440,9 @@ public class KubeJSClientEventHandler {
 
 	@SubscribeEvent
 	public static void tagsUpdated(TagsUpdatedEvent event) {
-		if (event.getUpdateCause() == TagsUpdatedEvent.UpdateCause.CLIENT_PACKET_RECEIVED && Minecraft.getInstance().screen instanceof KubeJSErrorScreen screen && screen.scriptType == ScriptType.SERVER) {
+		if (event.getUpdateCause() == TagsUpdatedEvent.UpdateCause.CLIENT_PACKET_RECEIVED
+			&& Minecraft.getInstance().screen instanceof KubeJSErrorScreen screen
+			&& screen.scriptType == ScriptType.SERVER) {
 			Minecraft.getInstance().kjs$runCommand("kubejs errors server");
 		}
 	}

@@ -9,10 +9,10 @@ import dev.latvian.mods.rhino.Context;
 import net.minecraft.commands.arguments.ParticleArgument;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
-import org.joml.Vector3f;
+import net.minecraft.util.ARGB;
 
 public interface ParticleOptionsWrapper {
-	DustParticleOptions ERROR = new DustParticleOptions(new Vector3f(0F, 0F, 0F), 1F);
+	DustParticleOptions ERROR = new DustParticleOptions(ARGB.colorFromFloat(1F, 0F, 0F, 0F), 1F);
 
 	// TODO (26.1?): improve
 	static ParticleOptions wrap(Context cx, Object o) {
@@ -21,7 +21,7 @@ public interface ParticleOptionsWrapper {
 		} else if (o != null) {
 			try {
 				var reader = new StringReader(o instanceof JsonElement j ? j.getAsString() : o.toString());
-				return ParticleArgument.readParticle(reader, RegistryAccessContainer.of(cx).access());
+				return ParticleArgument.readParticle(reader, RegistryAccessContainer.of(cx).registryAccess());
 			} catch (Exception ex) {
 				throw new KubeRuntimeException("Failed to parse ParticleOptions from %s".formatted(o), ex).source(SourceLine.of(cx));
 			}

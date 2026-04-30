@@ -1,14 +1,15 @@
 package dev.latvian.mods.kubejs.integration.rei;
+/*
 
 import dev.latvian.mods.kubejs.recipe.viewer.RemoveCategoriesKubeEvent;
 import dev.latvian.mods.rhino.Context;
 import me.shedaniel.rei.api.client.registry.category.CategoryRegistry;
 import me.shedaniel.rei.api.common.category.CategoryIdentifier;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.Set;
 
-public class REIRemoveCategoriesKubeEvent implements RemoveCategoriesKubeEvent {
+public class REIRemoveCategoriesKubeEvent implements RemoveCategoriesKubeEvent  {
 	private final Set<CategoryIdentifier<?>> categoriesRemoved;
 	private final CategoryRegistry registry;
 
@@ -18,9 +19,9 @@ public class REIRemoveCategoriesKubeEvent implements RemoveCategoriesKubeEvent {
 	}
 
 	@Override
-	public void remove(Context cx, ResourceLocation[] categories) {
+	public void remove(Context cx, Identifier[] categories) {
 		for (var id : categories) {
 			categoriesRemoved.add(CategoryIdentifier.of(id));
 		}
 	}
-}
+}*/

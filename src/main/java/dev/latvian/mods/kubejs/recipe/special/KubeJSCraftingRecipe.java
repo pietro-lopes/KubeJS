@@ -5,7 +5,6 @@ import dev.latvian.mods.kubejs.recipe.ModifyCraftingItemKubeEvent;
 import dev.latvian.mods.kubejs.recipe.ingredientaction.IngredientAction;
 import dev.latvian.mods.kubejs.recipe.ingredientaction.IngredientActionHolder;
 import dev.latvian.mods.kubejs.script.ScriptType;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingInput;
@@ -32,11 +31,10 @@ public interface KubeJSCraftingRecipe extends CraftingRecipe {
 		return list;
 	}
 
-	default ItemStack kjs$assemble(CraftingInput input, HolderLookup.Provider registryAccess) {
+	default ItemStack kjs$assemble(CraftingInput input, ItemStack baseResult) {
 		var modifyResult = kjs$getModifyResult();
-		var result = getResultItem(registryAccess);
 		//noinspection ConstantValue
-		result = (result == null || result.isEmpty()) ? ItemStack.EMPTY : result.copy();
+		var result = (baseResult == null || baseResult.isEmpty()) ? ItemStack.EMPTY : baseResult.copy();
 
 		if (!modifyResult.isEmpty()) {
 			var event = new ModifyCraftingItemKubeEvent(input, result, 0);

@@ -11,18 +11,24 @@ import dev.latvian.mods.kubejs.recipe.match.ReplacementMatchInfo;
 import dev.latvian.mods.kubejs.util.OpsContainer;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jspecify.annotations.Nullable;
 
 public record BlockComponent(boolean allowEmpty) implements RecipeComponent<Block> {
 	private static final Codec<Block> CODEC = BuiltInRegistries.BLOCK.byNameCodec();
-	public static final RecipeComponentType<Block> BLOCK = RecipeComponentType.unit(KubeJS.id("block"), new BlockComponent(false));
-	public static final RecipeComponentType<Block> OPTIONAL_BLOCK = RecipeComponentType.unit(KubeJS.id("optional_block"), new BlockComponent(true));
+
+	private static final ResourceKey<RecipeComponentType<?>> TYPE = RecipeComponentType.key(KubeJS.id("block"));
+	private static final ResourceKey<RecipeComponentType<?>> OPTIONAL_TYPE = RecipeComponentType.builtin("optional_block");
+
+	public static final BlockComponent BLOCK = new BlockComponent(false);
+	public static final BlockComponent OPTIONAL_BLOCK = new BlockComponent(true);
 
 	@Override
-	public RecipeComponentType<?> type() {
-		return allowEmpty ? OPTIONAL_BLOCK : BLOCK;
+	public ResourceKey<RecipeComponentType<?>> type() {
+		return allowEmpty ? OPTIONAL_TYPE : TYPE;
 	}
 
 	@Override
@@ -36,12 +42,12 @@ public record BlockComponent(boolean allowEmpty) implements RecipeComponent<Bloc
 	}
 
 	@Override
-	public Block wrap(RecipeScriptContext cx, Object from) {
+	public Block wrap(RecipeScriptContext cx, @Nullable Object from) {
 		return switch (from) {
 			case Block b -> b;
 			case BlockState s -> s.getBlock();
-			case JsonPrimitive json -> BlockWrapper.parseBlockState(cx.registries(), json.getAsString()).getBlock();
-			case null, default -> BlockWrapper.parseBlockState(cx.registries(), String.valueOf(from)).getBlock();
+			case JsonPrimitive json -> BlockWrapper.parseBlockState(cx.cx(), json.getAsString()).getBlock();
+			case null, default -> BlockWrapper.parseBlockState(cx.cx(), String.valueOf(from)).getBlock();
 		};
 	}
 

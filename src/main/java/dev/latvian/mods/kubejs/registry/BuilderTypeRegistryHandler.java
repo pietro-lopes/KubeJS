@@ -4,13 +4,13 @@ import com.mojang.serialization.Codec;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugin;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugins;
-import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.script.ScriptType;
 import dev.latvian.mods.kubejs.util.Lazy;
 import dev.latvian.mods.rhino.type.TypeInfo;
 import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -25,16 +25,16 @@ public record BuilderTypeRegistryHandler(Map<ResourceKey<?>, Info<?>> map) imple
 		KubeJSPlugins.forEachPlugin(handler, KubeJSPlugin::registerServerRegistries);
 	});
 
-	public static <T> Info<T> info(ResourceKey<Registry<T>> key) {
+	public static <T> Info<T> info(ResourceKey<? extends Registry<T>> key) {
 		return (Info<T>) INFO.get().get(key);
 	}
 
 	public static class Info<T> {
-		private BuilderType<T> defaultType;
-		private Map<ResourceLocation, BuilderType<T>> types;
-		private Map<String, BuilderType<T>> fallbackLookup;
-		private Codec<T> directCodec;
-		private TypeInfo typeInfo;
+		private @Nullable BuilderType<T> defaultType;
+		private @Nullable Map<Identifier, BuilderType<T>> types;
+		private @Nullable Map<String, BuilderType<T>> fallbackLookup;
+		private @Nullable Codec<T> directCodec;
+		private @Nullable TypeInfo typeInfo;
 
 		@Nullable
 		public BuilderType<T> defaultType() {
@@ -46,7 +46,7 @@ public record BuilderTypeRegistryHandler(Map<ResourceKey<?>, Info<?>> map) imple
 		}
 
 		@Nullable
-		public BuilderType<T> namedType(ResourceLocation name) {
+		public BuilderType<T> namedType(Identifier name) {
 			var t = types == null ? null : types.get(name);
 			return t != null ? t : fallbackLookup == null ? null : fallbackLookup.get(name.getPath());
 		}
@@ -63,31 +63,32 @@ public record BuilderTypeRegistryHandler(Map<ResourceKey<?>, Info<?>> map) imple
 	}
 
 	@Override
-	public <T> void of(ResourceKey<Registry<T>> registry, Consumer<Callback<T>> callback) {
+	public <T> void of(ResourceKey<? extends Registry<T>> registry, Consumer<Callback<T>> callback) {
 		callback.accept(new RegConsumer<>((Info) map.computeIfAbsent(registry, k -> new Info<>())));
 	}
 
 	@Override
-	public <T> void register(ResourceKey<Registry<T>> registry, Codec<T> directCodec, TypeInfo typeInfo) {
+	public <T> void register(ResourceKey<? extends Registry<T>> registry, Codec<T> directCodec, TypeInfo typeInfo) {
 		var info = map.computeIfAbsent(registry, k -> new Info<>());
 		info.directCodec = (Codec) directCodec;
 		info.typeInfo = typeInfo == null ? TypeInfo.NONE : typeInfo;
 	}
 
+
 	private record RegConsumer<T>(Info<T> info) implements BuilderTypeRegistry.Callback<T> {
-		private static final ResourceLocation DEFAULT = KubeJS.id("default");
+		private static final Identifier DEFAULT = KubeJS.id("default");
 
 		@Override
 		public void addDefault(Class<? extends BuilderBase<? extends T>> builderType, BuilderFactory factory) {
 			if (info.defaultType != null) {
-				ConsoleJS.STARTUP.warn("Previous default type '" + info.defaultType.builderClass().getName() + "' for registry '" + info + "' replaced with '" + builderType.getName() + "'!");
+				ScriptType.STARTUP.console.warn("Previous default type '" + info.defaultType.builderClass().getName() + "' for registry '" + info + "' replaced with '" + builderType.getName() + "'!");
 			}
 
 			info.defaultType = new BuilderType<>(DEFAULT, builderType, factory);
 		}
 
 		@Override
-		public void add(ResourceLocation type, Class<? extends BuilderBase<? extends T>> builderType, BuilderFactory factory) {
+		public void add(Identifier type, Class<? extends BuilderBase<? extends T>> builderType, BuilderFactory factory) {
 			if (info.types == null) {
 				info.types = new LinkedHashMap<>();
 			}
@@ -99,7 +100,7 @@ public record BuilderTypeRegistryHandler(Map<ResourceKey<?>, Info<?>> map) imple
 			var prev = info.types.get(type);
 
 			if (prev != null) {
-				ConsoleJS.STARTUP.warn("Previous '" + type + "' type '" + prev.builderClass().getName() + "' for registry '" + info + "' replaced with '" + builderType.getName() + "'!");
+				ScriptType.STARTUP.console.warn("Previous '" + type + "' type '" + prev.builderClass().getName() + "' for registry '" + info + "' replaced with '" + builderType.getName() + "'!");
 			}
 
 			var builderTypeDef = new BuilderType<>(type, builderType, factory);
