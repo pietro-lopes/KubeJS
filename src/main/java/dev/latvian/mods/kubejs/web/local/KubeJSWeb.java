@@ -12,7 +12,6 @@ import dev.latvian.apps.tinyserver.http.response.error.client.NotFoundError;
 import dev.latvian.apps.tinyserver.http.response.error.server.InternalError;
 import dev.latvian.apps.tinyserver.ws.Frame;
 import dev.latvian.apps.tinyserver.ws.WSHandler;
-import dev.latvian.apps.tinyserver.ws.WSKeepAliveThread;
 import dev.latvian.mods.kubejs.KubeJS;
 import dev.latvian.mods.kubejs.KubeJSPaths;
 import dev.latvian.mods.kubejs.plugin.KubeJSPlugin;
@@ -56,7 +55,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public class KubeJSWeb {
-	public static WSHandler<KJSHTTPRequest, KJSWSSession> UPDATES = WSHandler.empty();
+	private static @Nullable WSHandler<KJSHTTPRequest, KJSWSSession> UPDATES = null;
 
 	private static final Map<String, Path> BROWSE = Map.of(
 		"assets", KubeJSPaths.ASSETS,
@@ -107,7 +106,7 @@ public class KubeJSWeb {
 	public static void addScriptTypeEndpoints(ServerRegistry<KJSHTTPRequest> registry, ScriptType s, Runnable reload) {
 		var path = "/api/console/" + s.name;
 
-		s.console.wsBroadcaster = registry.ws(path + "/stream", () -> new ConsoleWSSession(s.console));
+		s.console.wsBroadcaster = registry.ws(path + "/stream", (request) -> new ConsoleWSSession(request, s.console));
 
 		registry.acceptPostString(path + "/info", s.console::info);
 		registry.acceptPostString(path + "/warn", s.console::warn);
@@ -147,7 +146,6 @@ public class KubeJSWeb {
 	}
 
 	public static void serverStarted(LocalWebServer instance) {
-		new WSKeepAliveThread(instance.server(), UPDATES, "/api/updates").start();
 	}
 
 	private static void reloadStartupScripts() {

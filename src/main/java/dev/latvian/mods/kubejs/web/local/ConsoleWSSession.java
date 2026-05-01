@@ -2,12 +2,14 @@ package dev.latvian.mods.kubejs.web.local;
 
 import com.google.gson.JsonElement;
 import dev.latvian.mods.kubejs.script.ConsoleJS;
+import dev.latvian.mods.kubejs.web.KJSHTTPRequest;
 import dev.latvian.mods.kubejs.web.KJSWSSession;
 
 public class ConsoleWSSession extends KJSWSSession {
 	public final ConsoleJS console;
 
-	public ConsoleWSSession(ConsoleJS console) {
+	public ConsoleWSSession(KJSHTTPRequest request, ConsoleJS console) {
+		super(request);
 		this.console = console;
 	}
 

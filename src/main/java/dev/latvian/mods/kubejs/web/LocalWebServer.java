@@ -14,7 +14,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.stream.IntStream;
 
 public record LocalWebServer(KJSHTTPServer server, String url, List<Endpoint> endpoints, String explorerCode) {
 	public record Endpoint(String method, String path, boolean auth) implements Comparable<Endpoint> {
@@ -57,7 +56,7 @@ public record LocalWebServer(KJSHTTPServer server, String url, List<Endpoint> en
 				server.setDaemon(true);
 				server.setServerName(KubeJS.DISPLAY_NAME);
 				server.setAddress(publicAddress.isEmpty() ? "127.0.0.1" : "0.0.0.0");
-				server.setPort(IntStream.range(properties.port, properties.port + 10));
+				server.setPortRange(properties.port, properties.port + 10);
 				server.setMaxKeepAliveConnections(3);
 				server.setKeepAliveTimeout(Duration.ofMinutes(5L));
 

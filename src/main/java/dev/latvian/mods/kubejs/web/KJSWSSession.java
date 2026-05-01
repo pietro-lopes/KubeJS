@@ -8,6 +8,11 @@ import dev.latvian.mods.kubejs.util.JsonUtils;
 
 public class KJSWSSession extends WSSession<KJSHTTPRequest> {
 	public SessionInfo info = SessionInfo.NONE;
+	public final KJSHTTPRequest request;
+
+	public KJSWSSession(KJSHTTPRequest request) {
+		this.request = request;
+	}
 
 	@Override
 	public void onTextMessage(String message) {
