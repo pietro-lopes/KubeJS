@@ -44,8 +44,10 @@ import dev.latvian.mods.rhino.util.HideFromJS;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectLinkedOpenHashMap;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.RegistryOps;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.world.item.crafting.RecipeManager;
+import net.neoforged.neoforge.common.conditions.ConditionalOps;
 import org.jetbrains.annotations.ApiStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -59,6 +61,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -174,19 +177,19 @@ public class RecipesKubeEvent implements KubeEvent {
 
 	@HideFromJS
 	@ApiStatus.Internal
-	public void post(Map<Identifier, JsonElement> datapackRecipeMap) {
-		discoverRecipes(datapackRecipeMap);
+	public void post(RegistryOps<JsonElement> ops, Map<Identifier, JsonElement> datapackRecipeMap) {
+		discoverRecipes(ops, datapackRecipeMap);
 		postEvent();
 		applyChanges(datapackRecipeMap);
 		finishEvent();
 	}
 
 	@HideFromJS
-	public void discoverRecipes(Map<Identifier, JsonElement> recipeJsons) {
+	public void discoverRecipes(RegistryOps<JsonElement> ops, Map<Identifier, JsonElement> recipeJsons) {
 		var timer = Stopwatch.createStarted();
 
 		KubeJSPlugins.forEachPlugin(p -> p.beforeRecipeLoading(this, recipeJsons));
-		int skippedRecipes = 0;
+		AtomicInteger skippedRecipes = new AtomicInteger();
 
 		for (var entry : recipeJsons.entrySet()) {
 			Identifier recipeId = entry.getKey();
@@ -195,39 +198,38 @@ public class RecipesKubeEvent implements KubeEvent {
 			//noinspection ConstantValue
 			if (recipeId == null || recipeId.getPath().startsWith("_")) {
 				infoSkip("Skipping recipe %s, filename starts with _".formatted(recipeId));
-				skippedRecipes++;
+				skippedRecipes.getAndIncrement();
 				continue;
 			}
 
-			var originalJsonElement = entry.getValue();
-
-			if (!(originalJsonElement instanceof JsonObject originalJson)) {
+			if (!(entry.getValue() instanceof JsonObject json)) {
 				warnSkip("Skipping recipe %s, not a json object".formatted(recipeId));
 				continue;
 			}
 
-			if (!originalJson.has("type")) {
+			if (!json.has("type")) {
 				warnSkip("Skipping recipe %s, missing 'type' field".formatted(recipeId));
 				continue;
 			}
 
-			var codec = MapCodec.unit(originalJson).codec();
+			var codec = ConditionalOps.createConditionalCodec(MapCodec.unitCodec(json));
 
-			switch (codec.parse(ops.json(), originalJson)) {
-				case DataResult.Success(var jsonResult, var lifecycle) -> {
-					if (jsonResult.isEmpty()) {
-						infoSkip("Skipping recipe %s, conditions not met".formatted(recipeId));
-						skippedRecipes++;
-					} else {
-						parseOriginalRecipe(jsonResult, recipeId);
-					}
+			switch (codec.parse(ops, json)) {
+				case DataResult.Success(var result, _) -> {
+					result.ifPresentOrElse(
+						originalJson -> parseOriginalRecipe(originalJson, recipeId),
+						() -> {
+							infoSkip("Skipping recipe %s, conditions not met".formatted(recipeId));
+							skippedRecipes.incrementAndGet();
+						}
+					);
 				}
 				case DataResult.Error<?> error -> errorSkip("Skipping recipe %s, error parsing conditions: %s".formatted(recipeId, error.message()));
 			}
 		}
 
 		takenIds.putAll(originalRecipes);
-		ScriptType.SERVER.console.info("Found %,d recipes (skipped %,d) in %s".formatted(originalRecipes.size(), skippedRecipes, timer.stop()));
+		ScriptType.SERVER.console.info("Found %,d recipes (skipped %,d) in %s".formatted(originalRecipes.size(), skippedRecipes.get(), timer.stop()));
 	}
 
 	private void parseOriginalRecipe(JsonObject json, Identifier recipeId) {

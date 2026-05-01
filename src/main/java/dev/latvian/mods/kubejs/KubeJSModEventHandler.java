@@ -56,7 +56,7 @@ public class KubeJSModEventHandler {
 			return;
 		}
 
-		RecipesKubeEvent.INSTANCE.get().post(event.getRecipeJsons());
+		RecipesKubeEvent.INSTANCE.get().post(event.getOps(), event.getRecipeJsons());
 	}
 
 	@SubscribeEvent(priority = EventPriority.LOW)
