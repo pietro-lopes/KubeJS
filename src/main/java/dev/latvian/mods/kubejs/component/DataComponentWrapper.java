@@ -132,7 +132,7 @@ public interface DataComponentWrapper {
 				int i = reader.getCursor();
 
 				var ops = registryOps == null ? NbtOps.INSTANCE : registryOps;
-				var parsed = TagParser.create(ops).parseFully(reader);
+				var parsed = TagParser.create(ops).parseAsArgument(reader);
 				var dataResult = dataComponentType.codecOrThrow().parse(ops, parsed);
 
 				if (builder == null) {
@@ -215,7 +215,7 @@ public interface DataComponentWrapper {
 				reader.skipWhitespace();
 
 				int i = reader.getCursor();
-				var input = TagParser.create(ops).parseFully(reader);
+				var input = TagParser.create(ops).parseAsArgument(reader);
 				var dataResult = dataComponentType.codecOrThrow().parse(ops, input);
 
 				if (builder == null) {
@@ -243,7 +243,7 @@ public interface DataComponentWrapper {
 		}
 
 		if (reader.canRead() && reader.peek() == '{') {
-			var tag = TagParser.create(ops).parseFully(reader);
+			var tag = TagParser.create(ops).parseAsArgument(reader);
 
 			if (builder == null) {
 				builder = DataComponentPatch.builder();
