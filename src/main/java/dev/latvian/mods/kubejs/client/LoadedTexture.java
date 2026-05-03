@@ -6,6 +6,7 @@ import dev.latvian.mods.kubejs.color.KubeColor;
 import it.unimi.dsi.fastutil.ints.Int2IntArrayMap;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
+import net.neoforged.fml.ModList;
 import org.jspecify.annotations.Nullable;
 
 import javax.imageio.ImageIO;
@@ -31,12 +32,29 @@ public class LoadedTexture {
 					return new LoadedTexture(ImageIO.read(in), Files.exists(metaPath) ? Files.readAllBytes(metaPath) : null);
 				}
 			} else if (id.getNamespace().equals(KubeJS.MOD_ID)) {
-				var path1 = KubeJS.thisMod.getModInfo().getOwningFile().getFile().getFilePath().resolve("assets", "kubejs", "textures", id.getPath() + ".png");
+				String texturePath = "assets/kubejs/textures/" + id.getPath() + ".png";
+				var modFile = KubeJS.thisMod.getModInfo().getOwningFile().getFile();
 
-				if (Files.exists(path1)) {
-					try (var in = new BufferedInputStream(Files.newInputStream(path1))) {
-						var metaPath = KubeJS.thisMod.getModInfo().getOwningFile().getFile().getFilePath().resolve("assets", "kubejs", "textures", id.getPath() + ".png.mcmeta");
-						return new LoadedTexture(ImageIO.read(in), Files.exists(metaPath) ? Files.readAllBytes(metaPath) : null);
+				if (modFile.getContents().containsFile(texturePath)) {
+					try (var in = modFile.getContents().get(texturePath).open()) {
+						String mcmetaPath = "assets/kubejs/textures/" + id.getPath() + ".png.mcmeta";
+						byte[] mcmetaBytes = modFile.getContents().containsFile(mcmetaPath) ? modFile.getContents().get(mcmetaPath).readAllBytes() : null;
+						return new LoadedTexture(ImageIO.read(in), mcmetaBytes);
+					}
+				}
+			} else {
+				var modContainer = ModList.get().getModContainerById(id.getNamespace());
+
+				if (modContainer.isPresent()) {
+					var modFile = modContainer.get().getModInfo().getOwningFile().getFile();
+					String texturePath = "assets/" + id.getNamespace() + "/textures/" + id.getPath() + ".png";
+
+					if (modFile.getContents().containsFile(texturePath)) {
+						try (var in = modFile.getContents().get(texturePath).open()) {
+							String mcmetaPath = "assets/" + id.getNamespace() + "/textures/" + id.getPath() + ".png.mcmeta";
+							byte[] mcmetaBytes = modFile.getContents().containsFile(mcmetaPath) ? modFile.getContents().get(mcmetaPath).readAllBytes() : null;
+							return new LoadedTexture(ImageIO.read(in), mcmetaBytes);
+						}
 					}
 				}
 			}
