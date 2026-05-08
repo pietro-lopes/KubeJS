@@ -5,16 +5,17 @@ import dev.latvian.mods.rhino.util.ReturnsSelf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.CreativeModeTab;
+import org.jspecify.annotations.Nullable;
 
 @ReturnsSelf
 public class CreativeTabBuilder extends BuilderBase<CreativeModeTab> {
 	public transient CreativeTabIconSupplier icon;
-	public transient CreativeTabContentSupplier content;
+	public transient @Nullable CreativeTabContentSupplier content;
 
 	public CreativeTabBuilder(Identifier i) {
 		super(i);
 		this.icon = CreativeTabIconSupplier.DEFAULT;
-		this.content = CreativeTabContentSupplier.DEFAULT;
+		this.content = null;
 	}
 
 	@Override

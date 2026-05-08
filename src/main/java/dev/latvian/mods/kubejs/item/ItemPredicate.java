@@ -45,10 +45,6 @@ public interface ItemPredicate extends Predicate<ItemStack>, IngredientSupplierK
 		}
 	}
 
-	default boolean kjs$testItem(Item item) {
-		return test(item.getDefaultInstance());
-	}
-
 	// TODO: remove or rework
 	@Deprecated(forRemoval = true)
 	default ItemStack[] kjs$getStackArray() {
@@ -115,16 +111,6 @@ public interface ItemPredicate extends Predicate<ItemStack>, IngredientSupplierK
 		}
 
 		return ids;
-	}
-
-	default ItemStack kjs$getFirst() {
-		for (var stack : kjs$getStackArray()) {
-			if (!stack.isEmpty()) {
-				return stack;
-			}
-		}
-
-		return ItemStack.EMPTY;
 	}
 
 	/// Marks whether an ingredient is safe to be used to match recipe filters during the recipe event.

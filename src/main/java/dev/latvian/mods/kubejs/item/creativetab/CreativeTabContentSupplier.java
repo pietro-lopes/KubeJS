@@ -1,39 +1,31 @@
 package dev.latvian.mods.kubejs.item.creativetab;
 
-import dev.latvian.mods.kubejs.item.ItemPredicate;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.context.ContextMap;
 import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-
-import java.util.List;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.display.SlotDisplay;
+import org.jspecify.annotations.Nullable;
 
 @FunctionalInterface
 public interface CreativeTabContentSupplier {
-	record Wrapper(CreativeTabContentSupplier supplier) implements CreativeModeTab.DisplayItemsGenerator {
+	record Wrapper(@Nullable CreativeTabContentSupplier supplier) implements CreativeModeTab.DisplayItemsGenerator {
 		@Override
 		public void accept(CreativeModeTab.ItemDisplayParameters itemDisplayParameters, CreativeModeTab.Output output) {
-			List<ItemStack> items = List.of();
-
-			try {
-				items = supplier.getContent(itemDisplayParameters.hasPermissions()).kjs$getDisplayStacks().stream().filter(is -> !is.isEmpty()).toList();
-			} catch (Exception ex) {
-				ex.printStackTrace();
-			}
-
-			if (items.isEmpty()) {
+			if (supplier == null) {
 				var is = Items.PAPER.getDefaultInstance();
 				is.kjs$setCustomName(Component.literal("Use .content(showRestrictedItems => ['kubejs:example']) to add more items!"));
 				output.accept(is);
 			} else {
-				for (var item : items) {
-					output.accept(item);
-				}
+				// todo again, context map?
+				supplier.getContent(itemDisplayParameters.hasPermissions())
+					.display()
+					.resolve(ContextMap.EMPTY, SlotDisplay.ItemStackContentsFactory.INSTANCE)
+					.forEach(output::accept);
 			}
 		}
 	}
 
-	CreativeTabContentSupplier DEFAULT = showRestrictedItems -> ItemPredicate.NONE;
-
-	ItemPredicate getContent(boolean showRestrictedItems);
+	Ingredient getContent(boolean showRestrictedItems);
 }

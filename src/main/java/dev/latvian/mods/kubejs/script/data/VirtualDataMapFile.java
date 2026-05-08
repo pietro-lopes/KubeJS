@@ -62,13 +62,20 @@ public class VirtualDataMapFile<RT, DT> implements BiConsumer<Identifier, DT> {
 	}
 
 	public void add(HolderSet<RT> holders, DT value, boolean replace) {
-		for (var holder : holders) {
-			add(holder, value, replace);
+		var tag = holders.unwrapKey();
+		if (tag.isPresent()) {
+			addTag(tag.get(), value, replace);
+		} else {
+			for (var holder : holders) {
+				add(holder, value, replace);
+			}
 		}
 	}
 
 	public void remove(HolderSet<RT> holders) {
-		holders.forEach(removals::add);
+		holders.unwrap()
+			.ifLeft(this::removeTag)
+			.ifRight(values -> values.forEach(this::remove));
 	}
 
 	public void add(Holder<RT> holder, DT value) {

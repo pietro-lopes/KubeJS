@@ -15,6 +15,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.TagKey;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -35,6 +36,19 @@ public interface RegistryPredicate<T> extends Predicate<Holder<T>> {
 				var predicate = (Predicate) cx.jsToJava(fn, t.shouldConvert() ? TypeInfo.RAW_PREDICATE.withParams(t) : TypeInfo.RAW_PREDICATE);
 				yield predicate::test;
 			}
+			case Iterable itr -> {
+				List<RegistryPredicate<?>> results = new ArrayList<>();
+
+				for (var elem : itr) {
+					results.add(of(cx, elem, target));
+				}
+
+				yield switch (results.size()) {
+					case 0 -> EntireRegistryPredicate.FALSE;
+					case 1 -> results.getFirst();
+					default -> new AnyRegistryPredicate(results);
+				};
+			}
 			default -> new RegistryHolderPredicate<>(Holder.direct(from));
 		};
 	}
@@ -42,7 +56,7 @@ public interface RegistryPredicate<T> extends Predicate<Holder<T>> {
 	private static RegistryPredicate<?> ofString(TypeInfo target, String s) {
 		return switch (s) {
 			case "*" -> EntireRegistryPredicate.TRUE;
-			case "-" -> EntireRegistryPredicate.FALSE;
+			case "-", "" -> EntireRegistryPredicate.FALSE;
 			case String tag when tag.charAt(0) == '#' -> {
 				var reg = RegistryType.ofType(target.param(0));
 				var registryTag = ID.mc(tag.substring(1));

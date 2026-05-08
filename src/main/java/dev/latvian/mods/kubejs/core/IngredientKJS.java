@@ -21,6 +21,7 @@ import net.minecraft.core.HolderSet;
 import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.nbt.Tag;
 import net.minecraft.tags.TagKey;
+import net.minecraft.util.context.ContextMap;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -102,7 +103,9 @@ public interface IngredientKJS extends ItemPredicate, Replaceable, WithCodec, It
 		if (item.isEmpty()) {
 			return false;
 		} else if (exact) {
-			var stacks = kjs$getStacks();
+			var display = kjs$self().display();
+			// TODO: non-empty context map?
+			var stacks = display.resolveForStacks(ContextMap.EMPTY);
 			return stacks.size() == 1 && ItemStack.isSameItemSameComponents(stacks.getFirst(), item);
 		} else {
 			return test(item);
@@ -162,6 +165,11 @@ public interface IngredientKJS extends ItemPredicate, Replaceable, WithCodec, It
 			case KubeJSHolderSet kjs -> kjs.kjs$toIngredientString(holderToString);
 			default -> null;
 		};
+	}
+
+	default ItemStack kjs$getFirst() {
+		// TODO (again!): context?
+		return kjs$self().display().resolveForFirstStack(ContextMap.EMPTY);
 	}
 
 	default String kjs$toIngredientString(@Nullable DynamicOps<Tag> ops) {
