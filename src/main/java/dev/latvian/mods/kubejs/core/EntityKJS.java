@@ -295,7 +295,7 @@ public interface EntityKJS extends WithPersistentData, MessageSenderKJS, ScriptT
 	}
 
 	@Info(value = "Teleports an entity to a dimension of specified ID, to specified coordinates and rotation.", params = {
-		@Param(name = "dimension", value = "A `ResourceLocation` of the target dimension. It can be a string representing the dimension ID."),
+		@Param(name = "dimension", value = "An `Identifier` of the target dimension. It can be a string representing the dimension ID."),
 		@Param(name = "x", value = "The `x` target coordinate."),
 		@Param(name = "y", value = "The `y` target coordinate."),
 		@Param(name = "z", value = "The `z` target coordinate."),
