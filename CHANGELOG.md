@@ -2,9 +2,6 @@
 
 
 ## Unreleased
-- /
-
-## [8.0.1] - 2026-06-08
 - Hotfix for the release version of NeoForge, sorry to anybody who got a Mixin crash when they tried to open a world!
 
 ## [8.0.0] - 2026-06-08
