@@ -4,6 +4,9 @@
 ## Unreleased
 - /
 
+## [8.0.1] - 2026-06-08
+- /
+
 ## [8.0.0] - 2026-06-08
 
 - Initial port to 26.1. For script developers, this version aims to maintain parity with how KubeJS worked in 1.21, obviously excluding changes that *had* to be made for Vanilla parity. Most notably:
