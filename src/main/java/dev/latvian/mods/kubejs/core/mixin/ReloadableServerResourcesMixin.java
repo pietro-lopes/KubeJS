@@ -45,10 +45,6 @@ public abstract class ReloadableServerResourcesMixin implements ReloadableServer
 
 	@Shadow
 	@Final
-	private HolderLookup.Provider loadingContext;
-
-	@Shadow
-	@Final
 	private List<Registry.PendingTags<?>> postponedTags;
 	@Shadow
 	@Final
@@ -115,11 +111,6 @@ public abstract class ReloadableServerResourcesMixin implements ReloadableServer
 	@Override
 	public void kjs$setServerScriptManager(ServerScriptManager serverScriptManager) {
 		kjs$serverScriptManager = serverScriptManager;
-	}
-
-	@Override
-	public HolderLookup.Provider kjs$getRegistryLookup() {
-		return loadingContext;
 	}
 
 	@Override
