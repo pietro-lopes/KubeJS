@@ -1,0 +1,15 @@
+# changelog
+
+
+## Unreleased
+
+- Initial port to 26.1. For script developers, this version aims to maintain parity with how KubeJS worked in 1.21, obviously excluding changes that *had* to be made for Vanilla parity. Most notably:
+    - Empty ingredients are now **fully disallowed** in Vanilla, and things like `Ingredient.empty` will throw in KubeJS, too.
+    - In general, using `Ingredient` solely to resolve to a list of item stacks is now *discouraged*, to be more in line with their purpose as a filter in Vanilla.
+    - Type wrappers were simplified and made a little more consistent.
+    - Component functions were reworked under the hood.
+    - The tag event was (again) reworked; if things break, yell at Max.
+    - Fluid Rendering: New `tintFunction` and `bucketColor` callbacks were added.
+    - Capabilities were fully reworked to fit with Neo's new attachment APIs.
+    - A (preliminary) rework for FoodBuilder
+    - A **lot** of cleanup under the hood, including no more `UtilsJS#wrap` and removing the static script manager reference.
