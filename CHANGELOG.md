@@ -2,6 +2,9 @@
 
 
 ## Unreleased
+- /
+
+## [8.0.0] - 2026-06-08
 
 - Initial port to 26.1. For script developers, this version aims to maintain parity with how KubeJS worked in 1.21, obviously excluding changes that *had* to be made for Vanilla parity. Most notably:
     - Empty ingredients are now **fully disallowed** in Vanilla, and things like `Ingredient.empty` will throw in KubeJS, too.
